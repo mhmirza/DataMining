@@ -1,6 +1,6 @@
 # DataMining
 
-This portfolio captures the work I completed for a course, **Data Mining**, at Carnegie Mellon University in Fall 2021. To view my GitHub repository, please click [here](https://github.com/mhmirza/DataMining). The work done here involves discovering structure and making predictions in large, complex data sets.
+This portfolio captures the work I completed for a course, **Data Mining**, at Carnegie Mellon University in Fall 2021. To view my GitHub repository, please click [here](https://github.com/mhmirza/DataMining). The work done here involves discovering structure and making predictions in large, complex data sets. The tasks encompass learnings about many commonly used methods for predictive and descriptive analytics tasks, in addition to assessing the methods' predictive and practical utility.
 
 # What I hope to learn?
 
