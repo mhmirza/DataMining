@@ -1,0 +1,499 @@
+---
+title: "Homework 4"
+author: "Mohammad Manzoor Hassan Mirza"
+output:
+  html_document:
+    highlight: pygments
+    theme: lumen
+    toc: yes
+    toc_depth: 3
+  word_document:
+    toc: yes
+    toc_depth: '3'
+---
+
+
+### Preamble: Loading packages and data
+
+```{r, message=FALSE}
+
+library(tidyverse)
+library(ggplot2)
+library(ISLR)
+library(partykit)
+library(caret)
+library(rpart)
+library(randomForest)
+library(pROC)
+library(tree)
+```
+
+##### Run the code chunk to load the data file `bank-full.csv`. See [here](https://archive.ics.uci.edu/ml/datasets/bank+marketing) to find out more about the dataset. After we load the original data, we oversample the observations with outcome "yes" in order to artifically overcome the problem with sample imbalance. Check out [this article](https://towardsdatascience.com/how-to-deal-with-imbalanced-data-34ab7db9b100) for some of the common techniques to deal with imbalanced data. What we are doing here is oversampling (upsampling) the minority class.
+
+```{r, cache = TRUE}
+
+# Read in the marketing data
+marketing <- read.csv("bank-full.csv")
+
+set.seed(981)
+
+# Upsample the data to artifically overcome sample imbalance
+marketing.more.idx <- sample(which(marketing$y == "yes"), 15000, replace = TRUE)
+marketing.upsample <- rbind(marketing,
+                            marketing[marketing.more.idx, ])
+
+# Trim job strings to 5 characters
+marketing.upsample <- transform(marketing.upsample, job = strtrim(job, 5))
+
+# Randomly select 20% of the data to be held out for model validation
+test.indexes <- sample(1:nrow(marketing.upsample), 
+                       round(0.2 * nrow(marketing.upsample)))
+train.indexes <- setdiff(1:nrow(marketing.upsample), test.indexes)
+
+# Just pull the covariates available to marketers (cols 1:8) and the outcome (col 17)
+marketing.train <- marketing.upsample[train.indexes, c(1:8, 17)]
+marketing.test <- marketing.upsample[test.indexes, c(1:8, 17)]
+
+```
+
+
+### Problem 1: Classifier performance metrics
+
+> In this problem we'll assume that we have a binary classification problem where our outcome variable $Y \in \{0, 1\}$.  Your main task is to construct a function that calculates various kinds of classifier performance metrics.  
+
+##### (a) Code up the function `classMetrics()` specified below.
+
+> Input: 
+
+| Argument | Description                                                        | 
+|----------|--------------------------------------------------------------------|
+|  `score` | length-n vector giving a (probability) score for every observation |
+|  `y`     | length-n vector of true observed class label for every observation |
+|  `cutoff`| score cutoff: classify $\hat y = 1$ if `score` >= `cutoff`         |
+| `type`   | which performance metric(s) to return.  `type = all` calculates all|
+
+> Output:
+
+Your output will be a **list** containing the following elements
+
+| Argument  | Description                                                      | 
+|-----------|------------------------------------------------------------------|
+|`conf.mat` | the confusion matrix for the classifier                          |
+| `perf`    | a data frame containing all of the metrics specified in `type`   |
+
+
+##### A function header is provided below to get you started. I've also added some comments to give you a sense of the high level structure of the function.
+
+```{r}
+
+classMetrics <- function(score, y, cutoff, 
+                         type = c("all", "accuracy", "sensitivity", 
+                                  "specificity", "ppv", "npv", "precision", 
+                                  "recall")) {
+
+  # classify the observations based on score and cutoff
+  pred.class <- ifelse(score >= cutoff, 1, 0)
+  
+  # Form confusion matrix
+  predicted = factor(pred.class, levels = c("0", "1"))
+  observed = factor(y, levels = c("0", "1"))
+  conf.mat = table (predicted, observed)
+  
+  # Use the appropriate entries in the confusion matrix to calculate all metrics:
+  # accuracy, sensitivity, specificity, ppv, npv, precision (which is the same as ppv), recall (which is the same as sensitivity)
+  A <- conf.mat[1,1]
+  B <- conf.mat[1,2] 
+  C <- conf.mat[2,1]
+  D <- conf.mat[2,2]
+  
+  accuracy <- (A + D) / (A + B + C + D)
+  sensitivity <- D / (B + D)
+  specificity <- A / (A + C)
+  ppv <- D / (D + C)
+  npv <- A / (A + B)
+  precision <- D / (D + C)
+  recall <- D / (B + D)
+
+  
+  # I'm giving you the exact names you should use in your output dataframe  
+  metric.names <- c("accuracy", "sensitivity", "specificity", 
+                    "ppv", "npv", "precision", "recall")
+
+  # Form into data frame
+  perf <- data.frame (value = c(accuracy, sensitivity, specificity, ppv, 
+                                     npv, precision, recall))
+  
+  # Your data frame should contain ONLY ONE COLUMN named "value"
+  # assign the metric.names above as the rownames of your data frame (just as the rownames, not as a second column!)
+  row.names (perf) <- metric.names
+  
+  # Return a list containing the confusion matrix and the data frame of the metrics
+  # If "all", return all metrics. Otherwise, return just the requested subset of metrics
+  if (type [1]!= "all") {
+    b <- list(conf.mat = conf.mat, perf = subset(perf, rownames(perf) %in% type))
+    return (b)
+  } else  {
+    a <- list(conf.mat = conf.mat, perf = perf)
+    return (a)
+  }
+}
+```
+
+
+##### I'm providing a `fakedata.Rda` which contains some fake data (two vectors `score.fake` and `y.fake`) to test out your function. After you complete the function, load the fake data and uncomment and run the three lines below. If your function is working correctly, you should get the exact same result as the sample output I provided below.
+
+```{r}
+
+load("fakedata.Rda")
+
+classMetrics(score.fake, y.fake, cutoff = 0.6, type = "all")
+
+classMetrics(score.fake, y.fake, cutoff = 0.2, type = "all")
+
+classMetrics(score.fake, y.fake, cutoff = 0.2, type = c("precision", "recall"))
+```
+
+> Example output: 
+
+```
+# Cutoff 0.6
+classMetrics(score.fake, y.fake, cutoff = 0.6, type = "all")
+$conf.mat
+         observed
+predicted  0  1
+        0 82 31
+        1 15 72
+
+$perf
+                value
+accuracy    0.7700000
+sensitivity 0.6990291
+specificity 0.8453608
+ppv         0.8275862
+npv         0.7256637
+precision   0.8275862
+recall      0.6990291
+
+# Cutoff 0.2
+classMetrics(score.fake, y.fake, cutoff = 0.2, type = "all")
+$conf.mat
+         observed
+predicted   0   1
+        0  36   3
+        1  61 100
+
+$perf
+                value
+accuracy    0.6800000
+sensitivity 0.9708738
+specificity 0.3711340
+ppv         0.6211180
+npv         0.9230769
+precision   0.6211180
+recall      0.9708738
+
+# Precision and recall only
+classMetrics(score.fake, y.fake, cutoff = 0.2, type = c("precision", "recall"))
+$conf.mat
+         observed
+predicted   0   1
+        0  36   3
+        1  61 100
+
+$perf
+              value
+precision 0.6211180
+recall    0.9708738
+```
+
+##### (b) We have provided a plotting routine below.  This function allows you to specify an x axis variable and a y-axis variable.  If `y = NULL`, the x-axis variable should be taken to be `score`, and should range from the smallest to the largest value of `score`.  If `flip.x = TRUE`, the function plots `1 - xvar_metric` on the x-axis.  E.g., if `xvar = Specificity` and `flip.x = TRUE`, your plot should have `1 - Specificity` as the x-axis variable (note that this is exactly what a ROC curve has on its x-axis).
+
+##### **To-do**: Add comments to the code below indicating what each line of code is doing. 
+
+```{r}
+#creating a function with probabilities plotted on the x-axis and classification metrics on the y variable!
+plotClassMetrics <- function(score, y, xvar = NULL, yvar = c("accuracy", "sensitivity", 
+                                  "specificity", "ppv", "npv", "precision", 
+                                  "recall"),
+                             flip.x = FALSE) {
+
+  # Check out the online documentation for match.arg() to find out what it does
+  # To dig even deeper, read this: https://alistaire.rbind.io/blog/match.arg/
+  
+  #matches yvar against a table of candidate values specified by choices!
+  yvar <- match.arg(yvar)
+  
+  #using descending scores to position samples accordingly!
+  unique.scores <- unique(score)
+  if(length(unique.scores) > 100) {
+    cutoff.seq <- sample(unique.scores, 100, replace = FALSE)
+  } else {
+    cutoff.seq <- unique.scores
+  }
+  #assigning n a value to be used in the for loop!
+  n <- length(cutoff.seq)
+  
+  #a numeric placeholder equal to the length of n!
+  x.out <- numeric(n)
+  y.out <- numeric(n)
+
+  #setting the plotting routine using class metrics function nested, metrics stored!
+  for(i in 1:n) {
+    if(!is.null(xvar)) {
+      metrics <- classMetrics(score, y, cutoff = cutoff.seq[i], type = c(xvar, yvar))
+      x.out[i] <- metrics$perf[xvar, 1]
+      y.out[i] <- metrics$perf[yvar, 1]
+    } else {
+      metrics <- classMetrics(score, y, cutoff = cutoff.seq[i], type = c(yvar))
+      x.out[i] <- cutoff.seq[i]
+      y.out[i] <- metrics$perf[yvar, 1]
+    }
+  }
+  
+  #incorporating the 1 - xvar_metric feature!
+  if(flip.x) {
+    x.out <- 1 - x.out
+  }
+  df.out <- data.frame(score = cutoff.seq, x = x.out, y = y.out)
+
+  df.out <- df.out[order(df.out$score), ]
+
+  df.out <- subset(df.out, subset = !duplicated(df.out$x))
+  
+  #setting the labels for the graph!
+  if(!is.null(xvar)) {
+    x.text <- ifelse(flip.x, paste0("1 - ", xvar), xvar)
+  } else {
+    x.text <- "score"
+  }
+  #qplot function to draw a line!
+  print(qplot(data = df.out, x = x, y = y, geom = "line",
+              xlab = ifelse(is.null(xvar), "score", x.text),
+              ylab = yvar, ylim = c(0, 1)))
+}
+```
+
+
+
+##### Another chance to verify that your `classMetrics()` works properly: uncomment and generate the following two test plots, and they should look like the sample plots I posted on Canvas.
+
+```{r}
+
+# ROC curve
+plotClassMetrics(score.fake, y.fake, xvar = "specificity", yvar = "sensitivity", flip.x = TRUE)
+
+# Precision against Score
+plotClassMetrics(score.fake, y.fake, yvar = "precision")
+
+```
+
+
+### Problem 2: Decision trees, with nicer plots
+
+> This problem introduces you to the `partykit` and `rattle` packages, which allow you to create much nicer decision tree plots.
+
+> We'll need to construct `rpart` objects instead of `tree` objects in order to use the more advanced plotting routines.  The syntax for `rpart` is similar to that of `tree`.  For additional details, you may refer to [the following link](http://www.statmethods.net/advstats/cart.html).
+
+> We will be using the `marketing` data, which has been split into `marketing.train` and `marketing.test` in the preamble of this document.  All model fitting should be done on `marketing.train`.  The outcome variable in the data set is `y`, denoting whether the customer opened up a CD or not.
+
+> This data comes from a Portuguese banking institution that ran a marketing campaign to try to get clients to subscribe to a "term deposit"" (a CD). A CD is an account that you can put money into that guarantees fixed interest rate over a certain period of time (e.g., 2 years). The catch is that if you try to withdraw your money before the term ends, you will typically incur heavy penalties or "early withdrawal fees".
+
+> Suppose that you’re hired as a decision support analyst at this bank and your first job is to use the data to figure out who the marketing team should contact for their next CD  marketing campaign. i.e., they pull up new spreadsheet that contains the contact information, age, job, marital status, education level, default history, mortgage status, and personal loan status for tens of thousands of clients, and they want you to tell them who they should contact.
+
+##### (a) Fit a decision tree to the data using the `rpart()` function.  Call this tree `marketing.tree`.  The syntax is exactly the same as for the `tree` function you saw on Lab 4.  Use the `plot` and `text` functions to visualize the tree.  Show a text print-out of the tree.  Which variables get used in fitting the tree?
+
+```{r, fig.height = 7}
+
+#fitting a decision tree using rpart
+marketing.tree <- rpart(y ~ ., marketing.train, method = "class")
+
+#plotting with text labels
+plot(marketing.tree)
+text(marketing.tree, pretty = 0)
+
+```
+
+- Housing, Balance and Age are the variables which get used in the fitting. 
+
+##### (b) The `as.party` command converts the `rpart` tree you fit in part (a) to a `party` object that has a much better plot function.  Run `plot` on the object created below.  Also run the `print` function. 
+
+##### In the plot, you'll see a node labeled Node 8.  How many observations fall into this leaf node?  What does the shaded bar shown below this Node mean? Do observations falling into this node get classified as `"yes"` or `"no"`?
+
+```{r, fig.height = 7, fig.width = 9}
+
+#uncomment the line below
+marketing.party <- as.party(marketing.tree)
+
+#plot() and then print() the marketing.party object
+plot(marketing.party)
+
+print(marketing.party)
+```
+
+- There are 2,682 observations in Node 8.
+
+- The height of the dark shaded part of the bar indicates the number of  observations in this leaf node that get classified as (y = "yes") i.e. customer opened up a CD whereas the light shaded part of the bar indicates the number of observations in this leaf node that get classified as (n = "no") i.e. customer does not open up a CD account.
+
+- Roughly ~ 65% of the observations in this leaf node get classified as "yes" whereas 35% of the observations get classified as "no".
+
+##### (c)  We got a pretty shallow tree in part (a).  Here we'll practice growing larger (deeper) trees, and pruning them back.  The code below grows a tree to a complexity parameter value of `cp = 0.002`, while ensuring that no single node contains fewer than `minsplit = 100` observations.    
+
+##### Run the `plotcp` command on this tree to get a plot of the Cross-validated error.  Also look at the `cptable` attribute of `marketing.full`.   
+
+```{r}
+
+marketing.full <- rpart(y ~ ., data = marketing.train, 
+                        control = rpart.control(minsplit = 100, cp = 0.002))
+
+# Run the `plotcp` command on this tree. Also look at the `cptable` attribute of `marketing.full`
+
+#plotting the cross-validated error 
+plotcp(marketing.full)
+
+#looking at the cptable attribute
+marketing.full$cptable
+```
+
+##### (d) The horizontal dotted line is 1 standard error above the minimum CV value for the range of `cp` values shown.  Apply the 1-SE rule to determine which value of `cp` to use for pruning.  Print this value of `cp`.    
+
+```{r}
+
+#applying the 1 SE rule to determine value of cp to use for pruning
+min.idx <- which.min(marketing.full$cptable[, 4])
+stderr1.idx <- which.max(marketing.full$cptable[, 4] <
+                           (min(marketing.full$cptable[, 4]) +
+                              marketing.full$cptable[min.idx, 5]))
+
+#1-SE CP value
+stderr1.cp <- round(marketing.full$cptable[stderr1.idx, 1], 3)
+print(stderr1.cp)
+
+```
+
+##### (e) Use the `prune` command (`prune(rpart.fit, cp = )`) to prune `marketing.full` to the level of complexity you settled on in part (e).  Call your pruned tree `marketing.pruned`.  Display a text print-out of your tree.  
+
+```{r}
+
+#marketing tree full pruned to a specified level of complexity 
+marketing.pruned <- prune(marketing.full, cp = stderr1.cp)
+print (marketing.pruned)
+
+#plotting the tree with text labels
+plot(marketing.pruned)
+text(marketing.pruned, pretty = 0)
+```
+
+> The questions below all refer to `marketing.pruned`.  
+
+##### (f) The code below converts your `marketing.pruned` tree into a `party` object and then plots the results.   Notice the use of `gpar` to set the `fontsize` for the plot.  
+
+##### Which Node has the highest proportion of individuals who were observed to open a CD?  How many individuals are in this node?  Describe the characteristics of these individuals.
+
+```{r, fig.width = 16, fig.height = 10}
+
+# Uncomment the code below to see plots
+marketing.pruned.party <- as.party(marketing.pruned)
+plot(marketing.pruned.party, gp = gpar(fontsize = 10))
+
+```
+
+- Node 4 has the highest proportion of individuals who were observed to open a CD i.e. ~80%. There are 168 individuals in this node. These individuals have taken a housing loan and are aged greater than or equal to 60.5 years.
+
+##### (g) Use the `predict` function on your pruned tree to get estimated probabilities of opening a cd for everyone in `marketing.test`.  Use your `classMetrics` function to get classification metrics (all of them) at probability `cutoff` values of `0.25`, `0.4` and `0.5`.  Use your `plotClassMetrics` command to construct an ROC curve.  
+
+```{r, cache = TRUE}
+set.seed(1)
+#predictions using pruned tree
+yhat.tree <- predict(marketing.pruned, newdata = marketing.test, test = "prob")
+
+#converting the yes/no levels to binary values in the dataframe
+marketing.test$y[marketing.test$y == "yes"] = 1
+marketing.test$y[marketing.test$y == "no"] = 0
+marketing.test$y <- as.numeric(marketing.test$y)
+
+#applying the class metrics function with cutoff = 0.25
+classMetrics(yhat.tree[,2], marketing.test$y, cutoff = 0.25, type = "all")
+
+#applying the class metrics function with cutoff = 0.4
+classMetrics(yhat.tree[,2], marketing.test$y, cutoff = 0.4, type = "all")
+
+#applying the class metrics function with cutoff = 0.5
+classMetrics(yhat.tree[,2], marketing.test$y, cutoff = 0.5, type = "all")
+
+#constructing an ROC curve
+plotClassMetrics(yhat.tree[,2], marketing.test$y, xvar = "specificity", yvar = "sensitivity", flip.x = TRUE)
+```
+
+##### (h) Which of the cutoffs considered in part (g) gives the highest sensitivity?  Which gives the highest specificity?  In this marketing problem, do you think we want to have high sensitivity or high specificity?   Explain.
+
+i) Highest Sensitivity: Given by cutoff 0.25.
+ii) Highest Specificity: Given by cutoff 0.50.
+iii) In this marketing problem, given the assumption that the cost of contacting a customer for CD is minimal, then calling a customer who actually does not avail CD (false positive) is less damaging to the bank compared to not calling a customer who would avail the CD (false negative). Therefore, we would want the false negative rate to be low so we do not lose out on potential customers. This translates to having a high sensitivity for this problem.
+
+### Problem 3: Random forests
+
+##### (a) Use the `randomForest` command to fit a random forest to `marketing.train` (this may take a minute or two to run).  Call your fit `marketing.rf`.  Show a print-out of your random Forest fit.  This print-out contains a confusion matrix.  Are the predicted classes given as the rows or columns of this table?  
+
+```{r, cache = TRUE}
+
+#fitting a random forest on marketing training set using mtry = sqrt(p)
+set.seed(1)
+marketing.rf <- randomForest(as.factor(y) ~ ., data = marketing.train, 
+                                mtry = 3,
+                                importance=TRUE)
+
+print (marketing.rf)
+```
+
+The predicted classes are given as the rows of the table.
+
+##### (b) Construct a variable importance plot of your random forest fit.  Which variables turn out to be the most important?
+
+```{r}
+
+#viewing the important of each variables
+varImpPlot(marketing.rf)
+
+```
+
+The graphs suggest that across all of the trees considered in the random
+forest, Balance and Age turn out to be the most important ones according to Increase in Node Purity whereas Housing and Age turn out to be the most important ones in terms of % Increase in MSE.
+
+##### (c) Use the `predict` command to obtain probability estimates on the test data. Use your `classMetrics` function to calculate performance metrics at `cutoff = 0.3`.  Compare the metrics to those of the pruned tree `marketing.pruned` at the same `cutoff = 0.3`.
+
+```{r}
+set.seed(2)
+#predicting probability estimates on test data
+yhat.rf = predict(marketing.rf, newdata = marketing.test, type = "prob")
+
+#applying the class metrics function with cutoff = 0.3 on random forest
+classMetrics(yhat.rf[,2], marketing.test$y, cutoff = 0.3, type = "all")
+
+#applying the class metrics function with cutoff = 0.3 on pruned tree
+classMetrics(yhat.tree[,2], marketing.test$y, cutoff = 0.3, type = "all")
+
+```
+
+- Pruned Tree: The random forest fit at a cutoff of 0.3 performs better across all classification metrics vs the pruned tree. We see a significant improvement in accuracy from 0.693 (pruned) to 0.845 (rf). The sensitivity also sees a huge jump from 0.47 (pruned) to 0.88 (rf) whereas the specificity improves only slightly by 2%.
+
+##### (d) Use the `roc` function from the `pROC` package to create two ROC objects, one for the random forest and the other for the pruned tree (see online documentation [here](https://www.rdocumentation.org/packages/pROC/versions/1.17.0.1/topics/roc)). Use `plot()` on the ROC object to plot the ROC curve for the random forest (see online documentation [here](https://www.rdocumentation.org/packages/pROC/versions/1.17.0.1/topics/plot.roc)). On the same plot, overlay the ROC curve for the pruned tree (use `add = TRUE` to overlay the curve on the previous plot, and use `steelblue` as the colour).  Calculate the AUC for both methods (can you find it in the ROC objects?).  Do we do better with random forests than with a single tree?  Are most of the gains at high or low values of Specificity?  i.e., is the random forest performing better in the regime we actually care about?
+
+```{r, fig.height = 5, fig.width = 5}
+
+#ROC object for Random Forest
+roc.rf <- roc(marketing.test$y, yhat.rf[, 2], auc = TRUE)
+
+#ROC object for the Pruned Tree
+roc.tree <- roc(marketing.test$y, yhat.tree[, 2], auc = TRUE)
+
+#plotting both ROC curves
+plot(roc.rf, col = "orange", legacy.axes = TRUE)
+plot(roc.tree, col = "steelblue", legacy.axes = TRUE, add = TRUE)
+
+#Calculating the AUC (area under curve) for both methods from the ROC object
+roc.rf$auc
+roc.tree$auc
+```
+
+- Yes, we do significantly better with Random Forests than a single tree since the AUC for former is 0.9166 versus 0.6576 for the latter.
+- We perform better at lower levels of Specificity. 
