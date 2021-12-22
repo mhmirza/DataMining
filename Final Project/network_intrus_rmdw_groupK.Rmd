@@ -1,0 +1,869 @@
+---
+title: "Classifying Intrusions, Intrusion Types, and Anomalies"
+author: "Beth Root, Rebecca Cotton, Manzoor Mirza"
+andrew_id: "eroot, rcotton, mmmirza"
+group: "Group K"
+date: "3/18/2021"
+output:
+  html_document:
+    highlight: pygments
+    theme: lumen
+    toc: yes
+    toc_depth: 3
+  word_document:
+    toc: yes
+    toc_depth: '3'
+---
+
+```{r, echo=FALSE, warning=FALSE, include=FALSE}
+
+library(tidyverse)
+library(ggplot2)
+library(partykit)
+library(caret)
+library(rpart)
+library(randomForest)
+library(pROC)
+library(GGally)
+library(ggcorrplot)
+library(knitr)
+library(gam)
+library(glmnet)
+library(leaps)
+library(gbm)
+library(tree)
+library(gridExtra)
+library(DataExplorer)
+
+options(scipen=4)
+
+```
+
+```{r, echo=FALSE}
+classMetrics <- function(score, y, cutoff, 
+                         type = c("all", "accuracy", "sensitivity", 
+                                  "specificity", "ppv", "npv", "precision", 
+                                  "recall")) {
+  type <- match.arg(type, several.ok = TRUE)
+  n <- length(y) 
+  
+  # Form confusion matrix
+  score.factor <- factor(as.numeric(score >= cutoff), levels = c("0", "1"))
+  confusion.mat <- table(score.factor, as.factor(y), dnn = list("predicted", "observed"))
+  # Calculate all metrics
+  acc <- sum(diag(confusion.mat)) / n
+  sens <- confusion.mat[2,2] / sum(confusion.mat[,2])
+  spec <- confusion.mat[1,1] / sum(confusion.mat[,1])
+  ppv <- confusion.mat[2,2] / sum(confusion.mat[2,])
+  npv <- confusion.mat[1,1] / sum(confusion.mat[1,])
+  prec <- ppv
+  rec <- sens
+  
+  metric.names <- c("accuracy", "sensitivity", "specificity", 
+                    "ppv", "npv", "precision", "recall")
+  metric.vals <- c(acc, sens, spec, ppv, npv, prec, rec)
+  
+  # Form into data frame
+  full.df <- data.frame(value = metric.vals)
+  rownames(full.df) <- metric.names
+  
+  # Return just the requested subset of metrics
+  if(type[1] == "all") {
+    list(conf.mat = confusion.mat, perf = full.df)
+  } else {
+    list(conf.mat = confusion.mat, 
+         perf = subset(full.df, subset = metric.names %in% type))
+  }
+}
+```
+
+```{r, echo=FALSE}
+plotClassMetrics <- function(score, y, xvar = NULL, yvar = c("accuracy", "sensitivity", 
+                                  "specificity", "ppv", "npv", "precision", 
+                                  "recall"),
+                             flip.x = FALSE) {
+
+  # Check out the online documentation for match.arg() to find out what it does
+  # To dig even deeper, read this: https://alistaire.rbind.io/blog/match.arg/
+  yvar <- match.arg(yvar)
+  
+  unique.scores <- unique(score)
+  if(length(unique.scores) > 100) {
+    cutoff.seq <- sample(unique.scores, 100, replace = FALSE)
+  } else {
+    cutoff.seq <- unique.scores
+  }
+  
+  n <- length(cutoff.seq)
+  
+  x.out <- numeric(n)
+  y.out <- numeric(n)
+
+  for(i in 1:n) {
+    if(!is.null(xvar)) {
+      metrics <- classMetrics(score, y, cutoff = cutoff.seq[i], type = c(xvar, yvar))
+      x.out[i] <- metrics$perf[xvar, 1]
+      y.out[i] <- metrics$perf[yvar, 1]
+    } else {
+      metrics <- classMetrics(score, y, cutoff = cutoff.seq[i], type = c(yvar))
+      x.out[i] <- cutoff.seq[i]
+      y.out[i] <- metrics$perf[yvar, 1]
+    }
+  }
+
+  if(flip.x) {
+    x.out <- 1 - x.out
+  }
+  df.out <- data.frame(score = cutoff.seq, x = x.out, y = y.out)
+
+  df.out <- df.out[order(df.out$score), ]
+
+  df.out <- subset(df.out, subset = !duplicated(df.out$x))
+  
+
+  if(!is.null(xvar)) {
+    x.text <- ifelse(flip.x, paste0("1 - ", xvar), xvar)
+  } else {
+    x.text <- "score"
+  }
+  
+  print(qplot(data = df.out, x = x, y = y, geom = "line",
+              xlab = ifelse(is.null(xvar), "score", x.text),
+              ylab = yvar, ylim = c(0, 1)))
+}
+```
+
+## Introduction
+
+In this report we will address the problem of identifying a network session as an intrusion or benign session for bank XYZ. We will also be classifying the intrusion sessions into six different intrusion types, which may identify different levels of risk for the bank. 
+
+The data we have available has a sample of 3000 network sessions, 2700 are benign and have no impact on the bank and 300 of them are labeled intrusions and may concur risk on the bank. We will be splitting and upsampling the dataset to create our train dataset to train our model on and a test dataset to evaluate the performance of our model.
+
+The objective is to provide a model that can correctly predict whether a network session is an intrusion or benign session, and could serve in the future, as a warning mechanism for the bank.
+
+## Section 1: Exploratory Data Analysis
+
+For an assessment of the size of our dataset, we started off by identifying its dimensions: 3000 rows and 23 columns. A summary of the dataset showed that there were no missing values in any column. However, the following columns were removed from our analysis since they carried zero values only: land, wrong_fragment, urgent, num_failed_logins, su_attempted, num_outbound_cmds, is_hot_login.
+
+The classifier in this dataset i.e. is_intrusion had one anomalous value of "=0". We substituted this with 0, assuming it to be a entry error in the dataset. Moreover, the variables flag, service and protocol_type had character class in the original dataset, and were changed to factors with distinct levels.  
+
+```{r, cache=TRUE, echo=FALSE, include=FALSE}
+
+#loading in the network data
+network <- read_csv("network_traffic.csv")
+
+network <- network[,-c(7:9, 11, 15, 20, 21)]
+
+dim(network)
+str(network)
+sum(is.na(network))
+network <- na.omit(network)
+summary(network)
+
+network$is_intrusion <- as.numeric(gsub('0=', 0, network$is_intrusion))
+network$protocol_type = factor(network$protocol_type)
+network$service = factor(network$service)
+network$flag = factor(network$flag)
+network$hot = as.numeric(as.character(network$hot))
+network$num_compromised= as.numeric(as.character(network$num_compromised))
+network$num_root = as.numeric(as.character(network$num_root))
+network$num_file_creations =
+  as.numeric(as.character(network$num_file_creations))
+network$num_shells = as.numeric(as.character(network$num_shells))
+network$num_access_files =
+  as.numeric(as.character(network$num_access_files))
+network$is_guest_login = factor(network$is_guest_login)
+
+
+intrusion.lab <- c("Non-Intrusion", "Intrusion")
+names(intrusion.lab) <- c("0", "1")
+
+```
+
+To explore the pattern of labeled intrusions & benign sessions, we decided to begin our analysis with a summary table of categorical variables in our data subset.
+
+- The summary table for Flag variable shows that the highest number of intrusions correspond to the flag type of SF whereas REJ and RSTO flags see no intrusions.
+
+- The summary table for Protocol Type variable shows that the highest number of intrusions correspond to TCP protocol type whereas ICMP protocol type sees no intrusions.
+
+- The summary table for Service Type variable shows that the highest number of intrusions correspond to the HTTP and Private service types where as there are 12 service types e.g. auth, domain_u etc. which see no intrusions.  
+
+```{r, echo=FALSE, eval=FALSE}
+
+tab.summary <- network %>%
+  group_by(flag, is_intrusion) %>%
+  summarise(count = n())
+tab.summary
+
+tab.summary2 <- network %>%
+  group_by(protocol_type, is_intrusion) %>%
+  summarise(count = n())
+tab.summary2
+
+tab.summary3 <- network %>%
+  group_by(service, is_intrusion) %>%
+  summarise(count = n())
+tab.summary3
+
+```
+
+### Variable Correlation with Intrusion Status 
+
+Examining the remaining numeric and binary variables, we observe that 6 additional features appear highly non-correlated with intrusion status: 
+
+- `num_access_files`
+- `num_shells`
+- `num_file_creations`
+- `num_root`
+- `root_shell`
+- `num_compromised`
+
+A closer analysis of these variables showed that with the exception of `num_root`, all the variables had very few deviations from 0 (less than `r round(10/3000*100, 1)`% of their observed data) and none of these deviations were associated with an observed intrusion.  
+
+`num_root` displayed a larger number of deviations from 0, but only one of these deviations was associated with an observed intrusion. Analysis of intrusion types confirmed that other features of this specific observation would mark it as an intrusion without relying on `num_root`. 
+
+Based on these result and later analyses that confirmed all of the above variables were non-significant predictors of intrusions across a variety of methods tested, we therefore excluded them all from our final analysis. 
+
+```{r, echo=FALSE}
+
+myvar <- c("duration", "src_bytes", "dst_bytes", "hot", "logged_in", "root_shell",
+           "num_compromised", "num_root", "num_file_creations", 
+           "num_shells", "num_access_files", "is_intrusion")
+
+subset <- network[myvar]
+corr <- cor(subset)
+ggcorrplot(corr, type = "lower", lab = TRUE)
+
+
+high.corr <- as.data.frame(as.table(corr))
+
+high.corr <- high.corr[(high.corr$Freq > 0.8 | high.corr$Freq < -0.8) & 
+            high.corr$Var1 != high.corr$Var2, ] 
+
+kable(high.corr, digits = 4, format = "markdown")
+```
+
+The correlation plot above showed the correlations between all of the variables in the dataset. Since, we are primarily concerned with is_intrusion, we see that there are only five variables that have a correlation with is_intrusion. These five variables are duration, src_bytes, dst_bytes, hot, and logged_in.
+
+The histogram plots for each of these variables help uncover insights regarding their frequency distribution within labeled intrusions and benign sessions. 
+
+- Duration: For non-intrusions, we see that majority of the sessions have a  duration which is a few seconds only whereas intrusion sessions have varying lengths with some going even beyond 2000 seconds.
+
+- SRC_Bytes: For non-intrusions, almost all of the sessions sent data less than 10k bytes data bytes from source to destination whereas for intrusion sessions, there was a heavier exchange of data stretching up to 300K bytes.
+
+- DST_Bytes: For non-intrusions, almost all of the sessions sent data less than 5 data bytes from destination to source whereas for intrusion sessions, there was a varying but much lighter exchange of data, spanning only between 0 to 600 bytes.
+
+- Hot: For non-intrusions, the number of hot indicators is 0 with a few exceptions whereas for intrusions, despite the majority of the sessions having 0 hot indicators, a significant number have this number equal to 2.
+
+- Logged_In: For non-intrusions, the number of successful logins is higher when compared to failed logins whereas the opposite is evident for intrusions.
+
+```{r, echo=FALSE}
+
+#duration
+ggplot(data=network, aes(duration, fill = is_intrusion)) +
+  geom_histogram() +
+  facet_wrap(~is_intrusion, labeller = labeller(is_intrusion = intrusion.lab),
+             scales = "free") + 
+  theme_bw() + 
+  theme(legend.position = "none") + 
+  xlab("Duration") + 
+  ylab("Count") 
+
+#src_bytes
+ggplot(data=network, aes(src_bytes, fill = is_intrusion)) +
+  geom_histogram() +
+  facet_wrap(~is_intrusion, labeller = labeller(is_intrusion = intrusion.lab), scales = "free") + 
+  theme_bw() + 
+  theme(legend.position = "none") + 
+  xlab("Number of Data Bytes from Source to Destination") + 
+  ylab("Count") 
+
+#dst_bytes
+ggplot(data=network, aes(dst_bytes, fill = is_intrusion)) +
+  geom_histogram() +
+  facet_wrap(~is_intrusion, labeller = labeller(is_intrusion = intrusion.lab),
+             scales = "free") + 
+  theme_bw() + 
+  theme(legend.position = "none") + 
+  xlab("Number of Data Bytes from Destination to Source") + 
+  ylab("Count") 
+
+#hot
+ggplot(data=network, aes(hot, fill = is_intrusion)) +
+  geom_histogram() +
+  facet_wrap(~is_intrusion, labeller = labeller(is_intrusion = intrusion.lab),
+             scales = "free") + 
+  theme_bw() + 
+  theme(legend.position = "none") + 
+  xlab("Number of Hot Indicators") + 
+  ylab("Count") 
+  
+#logged_in 
+ggplot(data=network, aes(logged_in, fill = is_intrusion)) +
+  geom_histogram() +
+  facet_wrap(~is_intrusion, labeller = labeller(is_intrusion = intrusion.lab),
+             scales = "free") + 
+  theme_bw() + 
+  theme(legend.position = "none") + 
+  xlab("Successful Login?") + 
+  ylab("Count") 
+```
+
+To further deep dive into our data and have a visual representation of intrusion trends across different levels of categorical variables, we plotted histograms for the following variables: protocol_type, service and flag, which highlighted the following key features from each:
+
+- Protocol Type: Intrusions only occur when the protocol type is TCP or UDP. However, both these protocol types may also exist during non-intrusion sessions.
+
+- Service: Intrusions only occur when the service is: ftp; ftp_data; http; private. 
+
+- Flag: RSTR, S0 and S3 are the only flag types which occur only when it is an intrusion session.
+
+```{r, echo=FALSE}
+
+#box plots/histogram of is_intrusion with discrete variables
+
+#protocol type
+ggplot(network, aes(x = protocol_type, fill = is_intrusion)) +
+  geom_bar() +
+  facet_grid(~ is_intrusion, labeller = labeller(is_intrusion = intrusion.lab),
+             scales = "free") + 
+  theme_bw() + 
+  theme(legend.position = "none") + 
+  xlab("Protocol Type") + 
+  ylab("Count") 
+
+#service
+ggplot(network, aes(x = service, fill = is_intrusion)) +
+  geom_bar() +
+  facet_grid(~ is_intrusion, labeller = labeller(is_intrusion = intrusion.lab),
+             scales = "free") + 
+  theme_bw() + 
+  theme(legend.position = "none") + 
+  xlab("Service") + 
+  ylab("Count") + theme(axis.text.x = element_text(angle=90, hjust=1))
+
+#Flag
+ggplot(network, aes(x = flag, fill = is_intrusion)) +
+  geom_bar() +
+  facet_grid(~ is_intrusion, labeller = labeller(is_intrusion = intrusion.lab),
+             scales = "free") + 
+  theme_bw() + 
+  theme(legend.position = "none") + 
+  xlab("Flag") + 
+  ylab("Count") 
+
+```
+
+### Intrusion classification 
+
+We can observe 6 distinct types of intrusions in the network data: 
+
+- Flag RSTR
+- Flag S0
+- Flag S3
+- Service ftp
+- Service ftp_data
+- Service private 
+
+The first three intrusions can be identified solely by the `flag` variable: `RSTR`, `S0` and `S3` only occur when an intrusion occurs. 
+
+```{r, echo=FALSE}
+
+intrusion <- network[which(network$is_intrusion == 1),]
+
+intrusion.remove <- c("num_root", "num_compromised", "num_file_creations", "num_shells", "num_access_files", "root_shell")
+
+intrusion2 <- intrusion[,-(match(intrusion.remove, names(intrusion)))]
+
+comp.tab <- network %>%
+  group_by(flag, protocol_type, service, is_intrusion) %>%
+  summarise(count = n(), duration = mean(duration), src = mean(src_bytes), dst = mean(dst_bytes), 
+            hot = mean(hot), logged_in = sum(logged_in), is_guest = sum(as.numeric(is_guest_login)))
+
+comp.tab.1only <- rbind(comp.tab[comp.tab$flag == "RSTR",], comp.tab[comp.tab$flag == "S0",], 
+                        comp.tab[comp.tab$flag == "S3",])
+kable(comp.tab.1only, digits = 2, caption = "Unique Intrusion Flags", format="markdown")
+# Error types this IDs: flag == [RSTR, S0, S3]
+```
+
+The three `service` intrusion types are more difficult to characterize: there are both intrusions and non-intrusions characterized by these service types. 
+
+```{r, echo=FALSE}
+comp.tab.1and0 <- rbind(comp.tab[(comp.tab$protocol_type == "tcp" & comp.tab$service == "ftp"),], 
+                        comp.tab[(comp.tab$protocol_type == "tcp" & 
+                                    comp.tab$service == "ftp_data"),], 
+                        comp.tab[(comp.tab$protocol_type == "udp" & comp.tab$service == "private"),])
+
+kable(comp.tab.1and0, digits = 1, caption = "Non-unique Categorical Intrusions", format="markdown")
+# All these errors flag == SF. If protocol_type == tcp & service == ftp_data, logged_in is a good distinguishing characteristic (76/77 logged_in's happen with no intrusion). 
+```
+
+`Service ftp` and `Service ftp_data` data points are fairly straightforward to classify as intrusions or non-intrusions. 
+
+`Service ftp` data points differ along several key variables. Intrusions have significantly longer connection times (`duration`), use fewer data bytes from destination to source (`dst_bytes`), and have zero hot indicators (`hot`). 
+
+```{r, echo=FALSE}
+tcp.ftp <- network[which(network$protocol_type == "tcp" & network$service == "ftp"),]
+
+
+tcp.1 <- ggplot(data = tcp.ftp, mapping = aes(x = duration, fill = as.factor(is_intrusion))) + 
+  geom_histogram(binwidth = 5) + 
+  theme_bw() + 
+  scale_fill_discrete(name = "Intrusion", labels = intrusion.lab) + 
+  xlab("Length of Session (seconds)") 
+
+tcp.2 <- ggplot(data = tcp.ftp, mapping = aes(x = dst_bytes, fill = as.factor(is_intrusion))) + 
+  geom_histogram(binwidth = 100) + 
+  theme_bw() + 
+  scale_fill_discrete(name = "Intrusion", labels = intrusion.lab) + 
+  xlab("Number of Data Bytes from Destination to Source")  
+
+tcp.3 <- ggplot(data = tcp.ftp, mapping = aes(x = hot, fill = as.factor(is_intrusion))) + 
+  geom_histogram() + 
+  theme_bw() + 
+  scale_fill_discrete(name = "Intrusion", labels = intrusion.lab) + 
+  xlab("Number of Hot Indicators") 
+
+grid.arrange(tcp.1, tcp.2, tcp.3,
+             top = textGrob("Service ftp Key Variables"))
+```
+
+Intrusion and non-intrusion `Service ftp_data` data points can be separated with a high degree of accuracy based on `logged_in` status: almost all intrusions are not logged in. 
+
+```{r, echo=FALSE}
+
+tcp.ftpdata <- network[which(network$protocol_type == "tcp" & network$service == "ftp_data"),]
+
+ggplot(data = tcp.ftpdata, mapping = aes(x = logged_in, fill = as.factor(is_intrusion))) + 
+  geom_histogram() + 
+  theme_bw() + 
+  scale_fill_discrete(name = "Intrusion", labels = intrusion.lab) + 
+  xlab("Successful Login")
+
+```
+
+The last intrusion type, `Service private`, is the most difficult to distinguish from non-intrusions. While some intrusions and non-intrusions can be distinguished along the variables `duration` and `dst_bytes` where the most variation occurs, significant overlap remains where `dst_bytes` = 150 bytes and `duration` < 2.5 seconds. 
+
+```{r, echo=FALSE}
+udp.private <- network[which(network$protocol_type == "udp" & network$service == "private"),]
+
+ggplot(data = udp.private, mapping = aes(x = dst_bytes, y = duration, fill = as.factor(is_intrusion), color = as.factor(is_intrusion))) + 
+  geom_violin(alpha = .2) + 
+  geom_point(size = 3, position = "jitter") + 
+  facet_grid(~is_intrusion, labeller = labeller(is_intrusion = intrusion.lab)) + 
+  theme_bw() + 
+  theme(legend.position = "none") + 
+  xlab("Number of Data Bytes from Destination to Source") + 
+  ylab("Length of Session (seconds)") + 
+  labs(title = "Service Private Intrusion vs. Non-Intrustion") 
+
+# source for labeller code: https://www.datanovia.com/en/blog/how-to-change-ggplot-facet-labels/ 
+```
+
+We may be able to identify novel intrusions that do not conform to these six patterns in future data sets by looking for observations that fall outside patterns of "normal" non-intrusion points in this data set. 
+
+
+## Section 2: Methodology
+
+For the models, we decided to test logistic regression and three methods of creating decision trees, pruned trees, random forests, and boosting. We believed these four models would be the best indicator for classifying the data into intrusions and benign sessions.
+
+
+```{r, cache=TRUE, echo=FALSE}
+network$is_intrusion <- as.factor(network$is_intrusion)
+network$logged_in <- factor(network$logged_in)
+network$root_shell <- factor(network$root_shell)
+
+
+set.seed(981)
+
+# Upsample the data to artifically overcome sample imbalance
+network.more.idx <- sample(which(network$is_intrusion == 1), 1000, replace = TRUE)
+network <- rbind(network, network[network.more.idx, ])
+
+# Randomly select 20% of the data to be held out for model validation
+test.indexes <- sample(1:nrow(network), 
+                       round(0.2 * nrow(network)))
+train.indexes <- setdiff(1:nrow(network), test.indexes)
+
+
+# Just pull the covariates available to marketers (cols 1:8) and the outcome (col 17)
+network.train <- network[train.indexes, c(1, 2, 3, 4, 5, 6, 7, 8, 15, 16)]
+network.test <- network[test.indexes, c(1, 2, 3, 4, 5, 6, 7, 8, 15, 16)]
+
+```
+
+### Best Subsets and Logistic Regression
+
+Logistic regression is a classification model that checks the probability of an intrusion occurring. It returns the conditional probabilities or, for example, the probability of being an intrusion given that the duration is a certain number of seconds. 
+
+Before we created a logistic regression model, we ran the best subsets algorithm on the whole network dataset to decide what numerical variables would be the best for minimizing the Bayesian Information Classification (BIC). The purpose of BIC is to minimize the trade-off between the model error and the model complexity. For the best subsets algorithm, the variables that minimize BIC are `duration`, `src_bytes`, `dts_bytes`, and `hot`. We wanted to look at the best variables the best subset algorithm chooses and what variables the logistic regression chooses.
+
+For the logistic regression we used the numerical variables and two categorical variables, `logged_in` and `is_guest_login`, in the dataset to test the correlation between these variables and the is_intrusion, categorical variable. We can see that the majority of the variables in the logistic regression are statistically significant, which reflect the relationship between `is_intrusion` and these variables. We do not, however, see that the logistic regression chooses the same variables as the best subset algorithm, since `duration`, `src_bytes`, and `dts_bytes` all have coefficient values of zero, `hot` is not statistically significant, and `logged_in` is now a statistically significant coefficient. 
+
+We will further evaluate the performance of logistic regression later, but we can see the misclassification rate for the logistic model is 0.175. We can also that the model has few false negatives, which is the classification we are interested in, since it is more costly to have false negatives, or to not identity intrusions, than identifying false positives, or over-identifying intrusions.
+
+
+```{r, echo=FALSE, cache=TRUE}
+## Logistic Regression 
+#Best Subset Selection (vars for use in Logistic Reg)
+
+network.subset <- regsubsets(is_intrusion ~ duration + src_bytes + dst_bytes + 
+                               hot + num_compromised + num_root +
+                               num_file_creations + num_shells + num_access_files,
+                               data = network,
+                               nbest = 1,   
+                               nvmax = NULL,
+                               method = "exhaustive", really.big = TRUE)
+
+network.summary <- summary(network.subset)
+
+num_variables <- seq(1,length(network.summary$rss))
+
+#Using BIC to choose the number of variables 
+
+plot_BIC <- ggplot(data = data.frame(network.summary$bic),
+                   aes(x=num_variables,y=network.summary.bic))+
+  geom_line()+
+  geom_point(x=which.min(network.summary$bic),
+             y=min(network.summary$bic),aes(color="red"),
+             show.legend = FALSE)+
+  xlab("# Variables")+
+  ylab("BIC")+
+  theme_bw()
+
+plot(network.subset, scale = "bic")
+
+#Logistic Regression
+
+network.glm <- glm(is_intrusion ~ .- flag - service - protocol_type, 
+                     data = network.train, family = binomial())
+
+kable(summary(network.glm)$coef, format="markdown", digits=2)
+pred.lr <- predict(network.glm, newdata = network.test, type="response")
+pred.lr.int <- rep(0, length(pred.lr))
+pred.lr.int[pred.lr > 0.1] = 1
+print(paste("Misclassification rate of logistic regression: ", 
+            mean(pred.lr.int != network.test$is_intrusion)))
+table(pred.lr.int, network.test$is_intrusion)
+
+```
+
+The BIC graph shows the different adding of variables and the corresponding BIC values. We choose the variables that minimize the BIC, or `duration`, `src_bytes`, and `dst_bytes`.
+
+### Decision Tree Methods
+
+A decision tree helps decide the best variables to use to indicate the likelihood of something being identified as an inclusion or not.  
+
+
+#### Pruned Trees
+
+We decided to use pruned trees and full trees to understand the relationship between identifying intrusions and its covariates. With the correlation plot from the exploratory data analysis section, we see that the following numerical variables affect the intrusion identification variable, `is_guest_login`, `logged_in`, `hot`, `dst_bytes`, `src_bytes`, and `duration`. We also included the categorical variables `flag`, `service`, and `protocol_type` when creating the tree since these are used in identifying the different intrusion types. 
+
+Decision trees can be used with a full tree, with many splits and pruned back to identify the major splits of the tree. Pruning is used to identify which branches are not necessary and to prevent overfitting of the data. Pruning creates subtrees of the full tree that minimizes the number of terminal nodes in the whole tree.  For the pruning, we use the 1-SE rule to choose the complexity pruning value (cp), however, the only cp value that falls within the 1-SE rule is the minimum cp value so the full tree and the pruned tree are identical.
+
+```{r, echo=FALSE, cache=TRUE}
+## Full Tree Creation
+network.simple <- rpart(formula = is_intrusion ~ ., data=network.train)
+network.tree <- rpart(formula = is_intrusion ~ ., data=network.train,
+                      control = rpart.control(minsplit=100, cp=0.002))
+
+network.full <- as.party(network.tree)
+plot(network.full, gp = gpar(fontsize = 8))
+
+plotcp(network.tree)
+kable(network.tree$cptable, digits=3, format="markdown")
+
+cp <- with(network.tree, min(cptable[,1]))
+
+```
+
+This tree maps the splits within the full and pruned trees. These two trees end up being synonymous since the cp value is the same. We can there are a total of 19 terminal nodes created that determine the likelihood of a datapoint being an intrusion or a benign session. These terminal nodes are superseded by a number of splits or decisions the tree creates to choose the next path. 
+
+- One example of theses decisions is for terminal node 3, which decides that a session is benign, if its  `duration < 277` seconds. If a session's `duration > 277` iseconds, then it is classified as an intrusion.
+- Another example, is for the decision in node 7. We see that if a session's `flag == "REJ" | flag == "RSTO"` is classified as a benign session, given the previous decisions as well. This leads us to show some of the unique intrusion types and another way of classifying an intrusion based on categorical data.
+
+The other nodes describe the same process, deciding which path to take to ultimately end in a terminal node and a decision of intrusion or benign session. The filled in charts represents the probability of a datapoint being an intrusion session and the `n` values correspond to how many sessions fall within that terminal node.
+
+One downside of pruned and full trees is the splits are highly correlated with one another which produces a high variance for the overall tree. This means that one change within the tree or model would lead to large changes in the overall tree and its performance. Pruned and full trees are, however very interpretible and their complexity is easy to understand.
+
+```{r, echo=FALSE, cache=TRUE}
+## Prune Party
+network.pruned <- prune(network.tree, cp=cp)
+
+network.predict.pr <- predict(network.pruned, newdata=network.test)
+
+```
+
+#### Random Forests
+
+Another form of decision trees are random forests, which create many trees with the computer choosing the split variable from a number randomly selected variables, replacing the variables for every split. The random forest algorithm chose to randomly select three variables and create 500 trees since this is approximately the square root of the total number of predictors within the network train dataset. 
+
+Creating multiple trees leads to uninterpretable results but is more flexible and not as prone to overfitting as full trees. The random variable selection decorrleates the individual tree, which reduces the overall variance when we average the overall tree.
+
+
+```{r, cache=TRUE, echo=FALSE}
+## Random Forests
+network.rf <- randomForest(is_intrusion ~ ., data = network.train)
+network.rf
+
+rf.test.prob <- predict(network.rf, newdata = network.test, type = "prob")[,"1"]
+
+```
+
+This summary provides an idea of how the algorithm is running on the dataset, randomly selecting three variables at every split and creating 500 trees. 
+
+Importance plot 
+
+```{r, cache=TRUE, echo=FALSE}
+var.imp <- varImpPlot(network.rf)
+
+```
+
+The importance plot shows the overall importance for every variable in the train dataset and its influence on determining intrusion sessions. It is showing the impact of a variable of the Gini Index, a method of determining the residual sum of squares, or error rate, of the model using different variables. We see that `service`, `dst_bytes`, and `flag` variables tend to be most important. This makes sense as we base the intrusion types on a combination of `flag`, `service`, and `protocol_type` values and duration was one of the correlated variables to the `is_intrusion` variable.
+
+
+#### Boosting
+
+Boosting is the final decision tree method we use as a model. It creates a tree by building up the tree sequentially, growing from small trees, one at a time, to improve the model fit. We slow down the addition of decision trees by decreasing the shrinkage parameter. Boosting leads to a tree with high bias and low variance, since the decision trees are added one at a time. This may outperform random forests if the depth is one or two, but this is liekly not enough to be statistically significant.
+
+```{r, cache = TRUE, echo=FALSE}
+# Boosting
+#apply boosting with 5000 trees, with a depth of 4
+set.seed(1)
+boost.network <- gbm(as.logical(is_intrusion == 1) ~ ., data = network.train, 
+                     distribution = "bernoulli",
+                     n.trees = 5000, interaction.depth = 4)
+
+summary(boost.network)
+
+#use the model to predict outcomes for testing data
+yhat.boost1 <- predict(boost.network, newdata = network.test, n.trees = 5000,
+                      type='response')
+boost.pred = rep(0, length(yhat.boost1))
+boost.pred[yhat.boost1 > 0.1] = 1
+print(paste("Misclassification rate with shrinkage 0.1: ", 
+            mean(as.factor(boost.pred) != network.test$is_intrusion)))
+
+#speeding up the learning to shrinkage = 0.7
+boost.network2 <- gbm(as.logical(is_intrusion == 1) ~ ., 
+                     data = network.train,
+                     distribution = "bernoulli",
+                     n.trees = 5000, interaction.depth = 4,
+                     shrinkage = 0.7, verbose = F)
+
+summary(boost.network2)
+
+yhat.boost2 <- predict(boost.network2, newdata = network.test, n.trees = 5000)
+boost.pred2 = rep(0, length(yhat.boost2))
+boost.pred2[yhat.boost2 > 0.1] = 1
+print(paste("Misclassification rate with shrinkage 0.7: ", 
+            mean(as.factor(boost.pred2) != network.test$is_intrusion))) 
+
+#using built in functionality for cross-validation
+boost.network.cv <- gbm(as.logical(is_intrusion == 1) ~ ., 
+                        network.train, 
+                         distribution = "bernoulli", 
+                       n.trees = 5000, interaction.depth = 4,verbose = F, 
+                       cv.folds = 10, shrinkage = 0.001)
+
+#plotting 10-fold cv error for each tree size
+qplot(1:5000, boost.network.cv$cv.error, xlab = "Number of trees")
+
+# minimum error
+print(paste("Minimum CV Error for Boosting: ", min(boost.network.cv$cv.error)))
+# Number of trees used in min CV model
+print(paste("Number of trees used: ", which.min(boost.network.cv$cv.error)))
+
+```
+
+We see the difference the shrinkage parameter makes on the misclassfication rate for the boosting models. Increasing the shrinkage parameter, greatly increases the misclassification rate. The plots show the relative influence a variable has within the boosted tree and its ability to determine intrusions. The cv.error plot shows that the cv.error tends to greatly reduces at the beginning and plateus as the number of trees increase.
+
+#### Comparing Methods
+
+We will compare all four models, the logistic regression, the pruned full tree, the random forest, and the boosting tree, with the class metrics function. This function returns the confusion matrix for the predicted values of the models versus the network test dataset and a dataframe of performance evaluations. These performance evaluators include accuracy, a measure of the true positive and negatives over the set size, sensitivity or recall, a measure of the true positive rate, specificity, a measure of the true negative rate, ppv or precision, or the positive predictive value, npv, or the negative predictive value. For our main performance indicator, we want to look at sensitivity since not declaring something as a network intrusion would have a higher cost than declaring more intrusions. This is also said as having false negatives instead of false positives.
+
+```{r, echo=FALSE, cache=TRUE}
+
+pr_metrics <- classMetrics(network.predict.pr[,2], network.test$is_intrusion, 
+             cutoff = 0.85, type = "all")
+rf_metrics <- classMetrics(rf.test.prob, network.test$is_intrusion, cutoff = 0.85, "all")
+lr_metrics <- classMetrics(pred.lr, network.test$is_intrusion, cutoff=0.85, type="all")
+boost_metrics <- classMetrics(yhat.boost1, network.test$is_intrusion, cutoff=0.85, type="all")
+
+pr_metrics$conf.mat
+rf_metrics$conf.mat
+lr_metrics$conf.mat
+boost_metrics$conf.mat
+
+```
+
+The confusion matrix shows the number of observations that belong as true positives, predicting an intrusion when there is one, true negatives, predicting a benign session when there is one, false positives, predicting an intrusion when it is a benign session, and false negatives, predicting a benign session when it is an intrusion.
+
+We see that for all the confusion matrices, the random forest model predicts the least amount of false negative between all four models with a cutoff of 0.85. This is a fairly large cutoff to test for overall robustness of the models. Later, we will expand on the robustness of the models and the high cutoff.
+
+```{r, echo=FALSE, cache=TRUE}
+
+kable(pr_metrics$perf, digits = 2, format="markdown")
+kable(rf_metrics$perf, digits = 2, format="markdown")
+kable(lr_metrics$perf, digits = 2, format="markdown")
+kable(boost_metrics$perf, digits = 2, format="markdown")
+
+```
+
+The performance evaluations dataframe allows us to compare the different rates between the four models. All models have similar specificity, ppv, and precision rates. Comparing the sensitivity rate, we see that the random forest model has the largest sensitivity rate, meaning it has the highest true positive rate. This is important since we do not want to declare a benign session when it is an actually an intrusion as this will lead to great losses for bank XYZ.
+
+```{r, echo=FALSE, cache=TRUE}
+## ROC Plot between Pruned and RF Tree
+network.roc.rf <- roc(network.test$is_intrusion, rf.test.prob)
+network.roc.prun <- roc(network.test$is_intrusion, network.predict.pr[,2])
+network.roc.lr <- roc(network.test$is_intrusion, pred.lr)
+network.roc.boost1 <- roc(network.test$is_intrusion, yhat.boost1)
+
+plot(network.roc.rf, title="Captain America Graph", legacy.axes=TRUE)
+plot(network.roc.prun, col='steelblue', add=TRUE)
+plot(network.roc.lr, col='red', add=TRUE)
+plot(network.roc.boost1, col='green', add=TRUE)
+
+auc.df <- data.frame("AUC" = c(network.roc.rf$auc, network.roc.prun$auc, 
+                       network.roc.lr$auc, network.roc.boost1$auc))
+
+row.names(auc.df) <- c("Random Forest", "Pruned Tree", "Logistic Regression", "Boosting")
+
+kable(auc.df, format="markdown", digits = 4)
+
+```
+
+Finally, the ROC curve and the area under the curve dataframe shows the model's ability at predicting intrusions in the test dataset. The higher the ROC curve, the better the classifier since it has more perfect probability ranking function. We can see that the random forest does not have the highest area under the curve but still has a very high value and it tends to maximize the sensitivity rate the fastest between all four models. Also, taking into account the confusion matrix and the other performance evaluations, we determine random forest to be the best model at predicting intrusion sessions. 
+
+## Section 3: Key Findings and  Main Takeaways
+
+### Finding 1: Labeled Intrusions are Distinct 
+
+All our tested models could successfully distinguish between labeled intrusions and non-intrusions with a high degree of specificity and sensitivity. See Methodology: Comparing Methods for an examination of how different models perform. 
+
+### Finding 2: Six Different Intrusion Types are Identifiable 
+
+We identified 6 distinct intrusion types which we classified based on categorical variables in the Data Exploration section. These intrusion types are: 
+
+- Flag RSTR
+- Flag S0
+- Flag S3
+- Service ftp
+- Service ftp_data
+- Service private 
+
+Our models used many of the distinguishing characteristics we identified to separate intrusion types, including `flag`, `service`, `dst_bytes`, `src_bytes`, and `duration`. 
+
+### Finding 3: Random Forest Best Maximizes Sensitivity  
+
+We chose the Random Forest model as our best model to fit new data and predict intrusions. This model has the highest detection power to identify false negatives (sessions labeled 'non-intrusion' that are actually intrusions). 
+
+Sensitivity is the most important metric for this dataset because it measures the percentage of correctly classified intrusions and thus minimizes false negatives. All our models run with very high sensitivity, but Random Forest retains this high sensitivity even with a very high cutoff score. For example, with a cutoff of 95% (only label as intrusion if the probability of intrusion is at least 95%), Random Forest still identifies intrusions as intrusions 96.7% of the time.  
+
+```{r, echo=FALSE}
+
+prune95 <- classMetrics(network.predict.pr[,2], network.test$is_intrusion, 
+             cutoff = 0.95, type = c("sensitivity", "specificity"))$perf
+rf95 <- classMetrics(rf.test.prob, network.test$is_intrusion, cutoff = 0.95, 
+             c("sensitivity", "specificity"))$perf
+lr95 <- classMetrics(pred.lr, network.test$is_intrusion, cutoff=0.95, 
+             type=c("sensitivity", "specificity"))$perf
+boost95 <- classMetrics(yhat.boost1, network.test$is_intrusion, cutoff=0.95, 
+             type=c("sensitivity", "specificity"))$perf
+
+kable(cbind(rf95, prune95, lr95, boost95), col.names = c("Random Forest", "Pruned", "Logistic", "Boost"), digits = 3, format = "markdown", caption = "Classification Metrics with Cutoff = 95%")
+
+```
+
+### A Random Forest Function Detects Intrusions in Real Time
+
+Using our Random Forest model refit to the entire network_traffic data, we crafted a function to identify intrusions in real time. 
+
+This function takes a cleaned dataset with the same variables as network_traffic.csv. The user can also specify the cutoff point (what probability threshold a session must pass to be labeled an intrusion). 
+
+The function returns four outputs: 
+
+- Dataframe with flagged intrusions, labeled intrusion types, and flagged anomalies
+- Summary table that lists the number of intrusions, intrusion types, and anomalies 
+- Indicies of flagged intrusions
+- Indicies of flagged anomalies
+
+A potential weakness of our model is that classification trees suffer from a very high variance, meaning their results are not always generalizable to novel data. The Random Forest method decorrelates trees to improve generalizability, but it remains a possibility that our model will not perform exceptionally well with novel data. 
+
+To compensate for this potential weakness, we added an `anomaly` flag to the function to help identify observations that might lie outside our model's ability to classify as either an intrusion or benign session. For example, we excluded 6 variables from our initial analysis because every observation in these variables was 0. If a user inputs an observation where one of these variables is anything other than 0, the function will flag this observation as an anomaly. Additionally, if the Random Forest model classifies an observation as an intrusion type that was not previously identified, the function will label that intrusion as `UNKNOWN` and flag it as an anomaly. 
+
+### Function to Identify Intrusions
+
+```{r, cache=TRUE}
+int_model <- randomForest(is_intrusion ~ ., data=network)
+
+predict.intrusion <- function(obs.set, int_model=c(int_model), int.cutoff){
+  ost.set$protocol_type = factor(ost.set$protocol_type)
+  ost.set$service = factor(ost.set$service)
+  ost.set$flag = factor(ost.set$flag)
+  
+  if (sum(is.na(obs.set)) > 0){
+    na.omit(obs.set)
+    print("NAs removed from data")
+  }
+  
+  ## INTRUSION MODEL
+  predict_int_matrix <- predict(int_model, newdata=obs.set)
+  
+  intrusion <- rep(0, length(predict_int_matrix))
+  intrusion[predict_int_matrix >= int.cutoff] = 1
+  
+  obs.set <- cbind(obs.set, intrusion)
+  
+  ## INTRUSION TYPE
+  intrusion_type <- rep(0, nrow(obs.set))
+  
+  for(i in 1:nrow(obs.set)){
+    if(intrusion==1){
+      if(flag=="RSTR"){ intrusion_type="Flag RSTR" }
+      else if(flag=="s0"){ intrusion_type="Flag s0" }
+      else if(flag=="s3"){ intrusion_type="Flag s3" }
+      else if(service=="ftp"){ intrusion_type="Service ftp" }
+      else if(service=="ftp_data"){ intrusion_type="Service ftp_data" }
+      else if(service=="private"){ intrusion_type="Service private" }
+      else{ intrusion_type="UNKNOWN" }
+    }
+  }
+  
+  obs.set <- cbind(obs.set, intrusion_type)
+  
+  ## ANOMALY MODEL
+  
+  anomaly <- rep(0, nrow(obs.set))
+  anomaly[with(obs.set, land != 0 |
+                 wrong_fragment != 0 |
+                 urgent != 0 |
+                 num_failed_logins != 0 |
+                 su_attempted != 0 |
+                 num_outbound_cmds != 0 |
+                 is_host_login != 0 |
+                 intrusion_type == "UNKNOWN")] = 1
+  
+  obs.set <- cbind(obs.set, anomaly)
+  
+  tab.obs.set <- obs.set %>%
+    group_by(intrusion, intrusion_type, anomaly) %>%
+    summarise(n = n())
+  
+  return(obs.set)
+  return(tab.obs.set)
+  return(paste("Index of Intrusions: ", which(obs.set$intrustion == 1)))
+  return(paste("Index of Anomalies: ", which(obs.set$anomaly == 1)))
+}
+```
+
+## Conclusion 
+
+A Random Forest model most successfully classifies intrusions correctly and minimizes false negative identifications. A function that uses the our Random Forest model to classify new observations and flags abnormalities outside of the model's ability to interpret can return a summary of potential intrusions in real time. 
+
+
+```{r, echo=TRUE}
+###################
+## END OF REPORT ##
+###################
+```
+
