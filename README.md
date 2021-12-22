@@ -21,12 +21,19 @@ I. [Assignment I](https://github.com/mhmirza/DataMining/tree/main/Assignment%20I
 * Part 3: Dealing with collinearity
 * Part 4: Exploring non-linearities
 
-II. Assignment II (to be updated)
+II. [Assignment II](https://github.com/mhmirza/DataMining/tree/main/Assignment%20II)
 
+* Folder to be updated.
 * Part 1: Placing knots, choosing degrees of freedom
 * Part 2: Cross-validation
 
-III. [Assignment III]
+III. [Assignment III](https://github.com/mhmirza/DataMining/tree/main/Assignment%20III)
+
+* Part 1: Variable selection
+* Part 2: Best subset selection
+* Part 3: Forward Stepwise Selection
+* Part 4: Lasso
+* Part 5: Instability of Logistic regression
 
 IV. [Assignment IV]
 
