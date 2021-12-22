@@ -1,0 +1,704 @@
+---
+title: "Midterm - Hands-on Assignment [Total: 15 points]"
+subtitle: "Data Mining - S21 A3"
+author: "Mohammad Manzoor Hassan Mirza" 
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    theme: lumen
+    highlight: pygments
+---
+
+##### To complete this assignment, follow these steps:
+
+1. Rename the `Midterm.Rmd` file downloaded from Canvas as `Midterm_YourName.Rmd`.
+
+2. Replace the "Your Name Here" text in the `author:` field of this Rmd file with your own name.
+
+3. When you have completed the assignment and have **checked** that your code both runs in the Console and knits correctly when you click `Knit to HTML`, submit both the `.Rmd` file and the `.html` output file on Canvas.
+
+### Preamble: Loading packages
+
+```{r}
+library(ISLR)
+library(ggplot2)
+library(ggcorrplot)
+library(GGally)
+library(leaps)
+library(splines)
+library(plyr)
+library(gam)
+library(glmnet)
+
+#Include additional libraries you are going to need here
+
+library(MASS)
+library(knitr)
+library(kableExtra)
+library(boot)
+library(splines)
+library(caret)
+library(GGally)
+library(gridExtra)
+library(ggpubr)
+library(tidyr)
+
+# Do NOT include library mgcv!!! It will interfere with the library gam.
+
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+options(scipen = 4)
+```
+
+> Note: All graphics should be created in `ggplot` style (and not R's base graphics) unless otherwise stated.
+
+### 1. [3 points] Explore the dataset
+
+##### We use the `College` dataset from `ISLR`. Type `?College` in your R console (do not include it in your Rmd code) to learn more about the variables in the dataset.
+
+##### Perform the following tasks:
+
+##### (a) Produce a summary of the variables in the dataset using `summary()`. Which variables are categorical and which are numeric? How many records in the dataset contain `NA`? Remove those records if any.
+
+```{r}
+#exploring the college dataset
+summary(College)
+
+#exploring the class of each variabale in the dataset
+sapply(College, class)
+
+#checking for missing records in any column
+sapply(College, function(x) sum(is.na(x))) 
+
+#rechecking for missing records in the entire data frame
+sum(is.na(College)) 
+```
+
+- The variable 'Private' is categorical, while all other variables in the dataset are numeric: Apps, Accept, Enroll, Top10perc, Top25perc, F.Undergrad, P.undergrad, Outstate, Room.Board, Books, Personal, PhD, Terminal, S.F. Ratio, perc.alumni, Expend, Grad.Rate. The dataset has no missing values.
+
+##### (b) Plot a histogram of `Grad.Rate`. Think about what values `Grad.Rate` should take. Do you notice anything strange in the data? Remove the observation(s) containing the potentially erroneous `Grad.Rate` value and **save the changed dataset as `College2`**. 
+
+```{r}
+#histogram of graduation rate in College dataset
+ggplot(College, aes(x = Grad.Rate)) + geom_histogram(binwidth = 10, 
+                                                     color = "black", 
+                                                     fill = "orange") +
+  ylab("Count") + xlab("Graduation Rate")
+
+#Omitting values from dataset with graduation rate greater than 100%
+College2 <- College[!College$Grad.Rate > 100, ]
+```
+- From the histogram, we can see that there are some graduation rates which take values beyond 100%. Since this is not practically possible, we remove those erroneous values from our dataset.
+
+> Note that from this point onwards you should operate on `College2` (which contains the data change you made above), not `College`.
+
+##### Repeat the above for `PhD` (this may not appear so prominent in the histogram as for `Grad.Rate`, but you can also take a look at the summary statistics for `PhD` in Part a). **Save the changed dataset back to `College2`**.
+
+```{r}
+#histogram of % of Faculty with PhD in College dataset
+ggplot(College2, aes(x = PhD)) + geom_histogram(binwidth = 3,
+                                                color = "black", 
+                                                fill = "orange") +
+  ylab("Count") + xlab("% of Faculty w/ PhD")
+
+#Omitting values from dataset with PhD greater than 100% 
+College2 <- College2[!College2$PhD > 100, ]
+```
+
+##### Now plot the histograms of `Grad.Rate` and `PhD` in `College2` to make sure they make sense now (change the `binwidth` if needed).
+
+```{r}
+
+#plotting graduation rate without erroneous values
+ggplot(College2, aes(x = Grad.Rate)) + geom_histogram(binwidth = 10, 
+                                                     color = "black", 
+                                                     fill = "orange") +
+  ylab("Count") + xlab("Graduation Rate")
+
+
+#plotting Faculty PhD rate without erroneous values
+ggplot(College2, aes(x = PhD)) + geom_histogram(binwidth = 3,
+                                                color = "black", 
+                                                fill = "orange") +
+  ylab("Count") + xlab("% of Faculty w/ PhD")
+
+```
+
+
+##### (c) Construct a color-coded visualization of the correlation matrix for all the variables in the dataset. If you encounter an error, try including only the numeric variables instead. List out the variables which are strongly correlated (greater than 0.8 or less than -0.8). Explain why these variables may be correlated in practical sense.
+
+```{r}
+#correlation plot of numeric variables only
+corr.College2 <- round(cor(College2[,-1]), 4)
+ggcorrplot(corr.College2, hc.order = TRUE)
+
+#identifying highly correlated variables with self correlated variables removed
+df1 <- as.data.frame(as.table(corr.College2))
+df1[(df1$Freq > 0.8 | df1$Freq < -0.8) & df1$Var1 != df1$Var2, ] 
+```
+
+- The variable pairs which are highly correlated are:
+
+1) Accept & Apps: The number of applications accepted can only be as much as the number of applications received and vice versa.
+
+2) Enroll & Apps: A college can only enroll at max as many new students as the applications received, leading to a parallel movement between the two variables.
+
+3) F.Undergrad & Apps: The number of full time graduates varies with the number of applications a college receives.
+
+4) Enroll & Accept: A college can only enroll as many new students as the applications accepted for admissions and vice versa. 
+
+5) F.Undergrad & Accept: The number of full time undergrads moves in the same direction as the number of applications accepted by the college.
+
+6) F.Undergrad & Enroll: The number of full time undergrads is correlated with how many new enrollments the college makes.
+
+7) Top25perc & Top10perc: Both percentages are expected to move hand in hand since we are looking a the top x% of H.S. class. Those belonging to top 10% of H.S. class will also be a part of top 25% of H.s. class. 
+
+8) Terminal & PhD: Terminal degree is described as the highest degree awarded at an institution, and for most colleges this is PhD resulting in a correlation between the two variables.
+
+##### (d) Construct a pairs plot, displaying correlations in the upper right panel and plots in the lower left panel. Include only the following variables: "Apps", "Accept", "Enroll", "F.Undergrad", "Outstate", "PhD", "Terminal", "S.F.Ratio", "Expend", "Grad.Rate". Comment on any patterns you observe.
+
+```{r, fig.height = 10, fig.width = 10, cache = TRUE}
+
+#pairs plot of specific variables inn the College 2 dataset
+ggpairs(College2 [, c("Apps", "Accept", 
+                      "Enroll", "F.Undergrad", 
+                      "Outstate", "PhD", "Terminal", 
+                      "S.F.Ratio", "Expend", "Grad.Rate")], 
+        title = "Correlation Plot of College Features")
+```
+
+- The pairs plot display scatter plot for each pair of variables mentioned above. The scatter plot follows a well defined pattern for the highly correlated variables identified in the previous part. Moreover, it can be seen that most of the correlations, both positive and negative, are statistically significant. It is worth noting that for some variable pairs, such as PhD and S.F. ratio, although the magnitude of the correlation is small, it nonetheless is statistically significant. 
+
+##### (e) Create side-by-side boxplots to show how the distribution of `Outstate` varies with `Private`. Then create another side-by-side boxplots to show how the distribution of `Grad.Rate` varies with `Private`. Comment on what you see in the boxplots.
+
+```{r}
+#Outstate v/s Private Boxplot
+ggplot(College2, aes(x = as.factor(Private), y = Outstate)) +
+  xlab("Private University") +
+  ylab("Out of State Tuition") + geom_boxplot() + 
+  ggtitle("Out of State Tuition v/s Private University")
+```
+
+- Outstate v/s Private: The first box plots above show that the median ~`r median(College2$Outstate[College2$Private == "Yes"])`, lower and upper quartile values for Out of State tuition are higher for private universities compared to public ones (median ~ `r median(College2$Outstate[College2$Private == "No"])`). The range of out of state tuition is also higher for private universities. Moreover, there are more outliers for Out of State tuition values amongst public universities than private. 
+
+```{r}
+#GradRate v/s Private Boxplot
+ggplot(College2, aes(x = as.factor(Private), y = Grad.Rate)) +
+  xlab("Private University") +
+  ylab("Graduation Rate") + geom_boxplot() +
+  ggtitle("Graduation Rate v/s Private University")
+```
+
+- Grad Rate v/s Private: The second pair of box plots above show that the (median ~`r median(College2$Grad.Rate[College2$Private == "Yes"])`), lower and upper quartile values for graduation rates are higher for private universities compared to public ones (median ~ `r median(College2$Grad.Rate[College2$Private == "No"])`). The range of graduation rates is also higher for private universities.
+
+##### (f) Let's hold out about 10% of our dataset for final model evaluation. Usually this is done by random sampling. For your results to be comparable to mine, however, I'm providing you the indices for the final evaluation set below. Use this index vector to split `College2` into two datasets (containing the actual data, not just the indices): `College2.final.eval` containing the observations with indices in `final.eval.idx`, and `College2.working` containing the remaining observations. Check the dimensions of the two resulting datasets after the split. You should have 698 records in `College2.working` and 77 records in `College2.final.eval`.
+
+```{r}
+
+final.eval.idx = c(295, 352, 579, 536, 657, 525, 424, 634, 755, 535, 
+                   111, 249, 181, 218, 552,  96, 422, 389,  63, 120,
+                   275, 217, 211, 271, 625, 364, 194, 631,  89, 372,
+                   519, 722,  24, 538, 272, 767,  86, 471, 346, 737,
+                   629, 496, 495, 561, 656,  93, 423, 665, 200, 230,
+                   502, 713, 174, 357, 622, 192, 494, 276, 201, 512,
+                   358, 222, 168, 534, 709, 386, 686, 356, 670, 104,
+                   460,  10,  97, 724, 630, 714, 214)
+
+#creating testing set
+College2.final.eval <- College2[final.eval.idx, ]
+dim(College2.final.eval)
+
+#creating training set
+College2.working <- College2[-final.eval.idx, ]
+
+dim(College2.working)
+```
+
+> For Questions 2, 3, and 4, use `College2.working` dataset only!!!
+
+
+### 2. [2 points] Subset Selection (Use `College2.working` dataset)
+
+##### (a) We are interested in predicting `Grad.Rate`. Perform best subset selection, forward stepwise selection, and backward stepwise selection on `College2.working` on all features. For each, do NOT print the `summary` but instead use `plot()` to plot out a table of models showing which variables are in each model. Use **BIC** as the y-axis. What do you notice about the best models chosen by the three methods?
+
+
+```{r}
+#Best Subset Selection
+grad.subset <- regsubsets(Grad.Rate ~ .,
+               data = College2.working,
+               nbest = 1,    # 1 best model for each number of predictors
+               nvmax = NULL,    # NULL for no limit on number of variables
+               method = "exhaustive", really.big = TRUE)
+
+#Forward Stepwise Selection
+grad.f_stwise <- regsubsets(Grad.Rate ~ .,
+                 data = College2.working,
+                 nbest = 1,    # 1 best model for each number of predictors
+                 nvmax = NULL,    # NULL for no limit on number of variables
+                 method = "forward", really.big = TRUE)
+
+#Backward Stepwise Selection
+grad.b_stwise <- regsubsets(Grad.Rate ~ .,
+                 data = College2.working,
+                 nbest = 1,    # 1 best model for each number of predictors
+                 nvmax = NULL,    # NULL for no limit on number of variables
+                 method = "backward", really.big = TRUE)
+
+plot(grad.subset, scale = "bic")
+plot(grad.f_stwise, scale = "bic")
+plot(grad.b_stwise, scale = "bic")
+```
+
+- From the three plots above, it can be seen that the optimal model chosen by each method is reflected in the top row, where a black square indicates the variables selected by this model. It can be seen that the optimal model for all of three methods has a BIC of approximately - 380. The same 7 variables have been chosen for the optimal model by best subset, forward and backward stepwise selection methods. These are as follows: Apps, Top25perc, P.Undergrad, Outstate, Room.Board, Perc.alumni and Expend.
+
+##### (b) Construct three plots of **BIC** for the sequence of models obtained using the three methods above respectively. Indicate the "optimal" model on each plot. Note that this is similar to what you did in Lab 3 Part 2(f) (except that here you only need one plot instead of four plots for each subset selection scheme). At how many number of variables does each curve reach the optimal point?
+
+```{r}
+
+#plotting BIC for best subset selection method 
+
+plot_best <- ggplot(data = data.frame(summary(grad.subset)$bic),
+                   aes(x = seq(1, length(summary(grad.subset)$bic)), 
+                       y = summary(grad.subset)$bic))+
+  geom_line() +
+  geom_point(x = which.min (summary(grad.subset)$bic),
+             y = min(summary(grad.subset)$bic), aes(color="red"),
+             show.legend = FALSE) +
+  xlab("# Variables") +
+  ylab("BIC") + ggtitle("Best Subset Selection") +  
+  theme_bw()
+
+plot_best
+
+#plotting BIC for forward stepwise selection method 
+
+plot_fwd <- ggplot(data = data.frame(summary(grad.f_stwise)$bic),
+                   aes(x = seq(1, length(summary(grad.f_stwise)$bic)), 
+                       y = summary(grad.f_stwise)$bic))+
+  geom_line() +
+  geom_point(x = which.min (summary(grad.f_stwise)$bic),
+             y = min(summary(grad.f_stwise)$bic), aes(color="red"),
+             show.legend = FALSE) +
+  xlab("# Variables") +
+  ylab("BIC") + ggtitle("Forward Stepwise Selection") +
+  theme_bw()
+
+plot_fwd  
+
+#plotting BIC for backward stepwise selection method
+
+plot_bwd <- ggplot(data = data.frame(summary(grad.b_stwise)$bic),
+                   aes(x = seq(1, length(summary(grad.b_stwise)$bic)), 
+                       y = summary(grad.b_stwise)$bic))+
+  geom_line() +
+  geom_point(x = which.min (summary(grad.b_stwise)$bic),
+             y = min(summary(grad.b_stwise)$bic), aes(color="red"),
+             show.legend = FALSE) +
+  xlab("# Variables") +
+  ylab("BIC") + ggtitle("Backward Stepwise Selection") +
+  theme_bw()
+
+plot_bwd
+
+```
+
+- The BIC curve for Best Subset Selection, Forward Subset Selection and Backward Subset Selection reaches the optimal point when the number of variables equals to 7.
+
+##### (c) Print the coefficients of the best models selected by BIC using best subset, forward, and backward selection. Are these models the same or different? Interpret each of the coefficients in the best model selected using best subset. Choose the appropriate unit when you interpret them (e.g. "for each dollar increase ..." vs. "for each thousand dollar increase ..." ) so that your interpretation makes practical sense. 
+
+
+```{r}
+#coefficients of the best model chosen by best subset selection
+coef(grad.subset, 7)
+
+#coefficients of the best model chosen by forward stepwise selection
+coef(grad.f_stwise, 7)
+
+#coefficients of the best model chosen by backward stepwise selection
+coef(grad.b_stwise, 7)
+```
+
+These models are the same and provide the same coefficient estimates for each of the chosen variables. Interpretations given below.
+
+- Apps: While holding all other variables in the model constant, an increase of 1 in the number of applications corresponds to an increase of `r coef(grad.subset, 7)[["Apps"]]` in Graduation Rate. 
+
+- Top25perc: While holding all other variables in the model constant, a 1 unit increase in the percentage of students from top 25% of H.S. class corresponds to an increase of `r coef(grad.subset, 7)[["Top25perc"]]` in Graduation Rate. 
+
+- P.Undergrad: While holding all other variables in the model constant, an increase of 1 in the number of part time undergraduates corresponds to a decrease of `r (coef(grad.subset, 7)[["P.Undergrad"]])*-1` in Graduation Rate.
+
+- Outstate: While holding all other variables in the model constant, each dollar increase in out of state tuition corresponds to an increase of `r coef(grad.subset, 7)[["Outstate"]]` in Graduation Rate.
+
+- Room.Board: While holding all other variables in the model constant, each dollar increase in room and board costs corresponds to an increase of `r coef(grad.subset, 7)[["Room.Board"]]` in Graduation Rate. 
+
+- perc.alumni: While holding all other variables in the model constant, a 1 unit increase in the percentage of alumni who donate corresponds to an increase of `r coef(grad.subset, 7)[["perc.alumni"]]` in Graduation Rate. 
+
+- Expend: While holding all other variables in the model constant, each dollar increase in the instructional expenditure per student corresponds to a decrease of `r (coef(grad.subset, 7)[["Expend"]])*-1` in Graduation Rate.
+
+- Intercept: This is the expected mean value of graduation rate when all other predictors in the model are 0.
+
+### 3. [4 points] Cross-validation and GAM (Use `College2.working` dataset)
+
+##### (a) Below are the `polyTestErr()` and the `smoothSplineTestErr()` functions from my Homework2_answers.html posted on Canvas. Run the code chunk. Do not change anything.
+
+```{r}
+# Function that trains a degree d polynomial on the training data
+# and returns its prediction error on the test data
+# Output: The test MSE of the model
+polyTestErr <- function(dat, train, d) {
+  poly.fit <- lm(y ~ poly(x, degree = d), data = dat, subset = train)
+  preds <- predict(poly.fit, dat)[-train]
+  mean((dat$y[-train] - preds)^2)
+}
+
+
+# Function that trains a smoothing spline with df degrees of freedom
+# The model is fit on the training data, 
+# and  its prediction error is calculated on the test data
+# Output: The test MSE of the model
+smoothSplineTestErr <- function(dat, train, df) {
+  if(df > 1) {
+    spline.fit <- with(dat, smooth.spline(x[train], y[train], df = df))
+    preds <- predict(spline.fit, dat$x)$y[-train]
+    mean((dat$y[-train] - preds)^2)
+  } else {
+    NA
+  }
+}
+```
+
+
+##### (b) Below is the `cubicSplineTestErr()` function from my Homework2_answers.html posted on Canvas. Modify the function into one that trains a **natural spline** model (given a complexity level in terms of degrees of freedom) on the training data and returns its prediction error on the test data. Rename the function as `naturalSplineTestErr()`.
+
+**Note**: There are two things you need to modify in the fuction: (1) what's the formula for fitting a natural spline? (2) what's the minimum `df` for natural splines to work?
+
+```{r}
+
+### The original
+# Function that trains a cubic spline with df degrees of freedom
+# The model is fit on the training data,
+# and  its prediction error is calculated on the test data
+# Output: The test MSE of the model
+naturalSplineTestErr <- function(dat, train, df) {
+  if(df >= 1) {
+    spline.fit <- lm(y ~ ns(x, df = df), data = dat, subset = train)
+    preds <- predict(spline.fit, dat)[-train]
+    mean((dat$y[-train] - preds)^2)
+  } else {
+    NA
+  }
+}
+```
+
+
+##### (c) Below is the `smoothCV()` function from my Homework2_answers.html posted on Canvas. You need to make the following changes to the function:
+
+###### (1) Replace the cubic spline function with the natural spline function you created in Part (b). In other words, the `smoothCV()` function now does $K$-fold cross validation for: polynomial regression, **natural splines (instead of cubic splines)**, and smoothing splines, with the degrees of freedom ranging from `df.min` to `df.max`.
+
+###### (2) Make sure you change the method name from "cubic.spline" to "natural.spline" in your output data frame.
+
+```{r}
+### The original
+smoothCV <- function(x, y, K = 10, df.min = 1, df.max = 10) {
+  dat <- data.frame(x = x, y = y)
+  n <- length(y) # number of observations
+
+  num.methods <- 3
+  method.names <- c("poly", "natural.spline", "smoothing.spline")
+  err.out <- data.frame(df = rep(df.min:df.max, each = num.methods),
+                        method = rep(method.names, df.max - df.min + 1))
+
+  set.seed(1)
+  # Get a random permutation of the indexes
+  random.perm <- sample(n)
+  # break points for the folds.  If n is not evenly divisible by K,
+  # these may not be of exactly the same size.
+  fold.breaks <- round(seq(1,n+1, length.out = K + 1))
+  fold.start <- fold.breaks[1:K]
+  fold.end <- fold.breaks[2:(K+1)] - 1
+  fold.end[K] <- n # Fix the last endoint to equal n
+  fold.size <- fold.end - fold.start + 1 # num obs in each fold
+
+  cv.err <- NULL
+  fold.err <- matrix(0, nrow = K, ncol = 3)
+  colnames(fold.err) <- c("poly", "natural.spline", "smoothing.spline")
+  # Outer loop: Loop over degrees of freedom
+  # Inner loop: Iterate over the K folds
+  for(df in df.min:df.max) {
+    for(k in 1:K) {
+      test.idx <- fold.start[k]:fold.end[k]
+      train <- random.perm[-test.idx]
+
+      # Calculate test error for the three models
+      poly.err <- polyTestErr(dat, train = train, d = df)
+      natural.spline.err <- naturalSplineTestErr(dat, train = train, df = df)
+      smooth.spline.err <- smoothSplineTestErr(dat, train = train, df = df)
+
+      # Store results for this fold
+      fold.err[k,] <- c(poly.err, natural.spline.err, smooth.spline.err)
+#       print(fold.err[k,])
+    }
+    # Perform weighted averaging to calculate CV error estimate
+    # MSE estimates from each fold are weighted by the size of the fold
+    # If all folds are the same size, this is the same thing as the unweighted
+    # average of all of the MSE's
+    err.ave <- colSums(sweep(fold.err, MARGIN = 1, fold.size, FUN = "*") / n)
+    cv.err <- c(cv.err, err.ave)
+  }
+  err.out$cv.error <- cv.err
+  err.out
+}
+
+```
+
+
+##### (d) Below is the `plot.smoothCV()` function from my Homework2_answers.html already modified to incorporate the natural splines. You do not need to make any change. Just run the code chunk below.
+
+```{r}
+# This plotting approach has a facet option which allows the user to show
+# three separate plots instead of overlaying the curves
+# If y.scale.factor is non-null, the range of the 
+# y-axis for the plot is restricted to y.min to y.min*y.scale.factor
+plot.smoothCV <- function(smoothcv.err, K, title.text = "", facet = FALSE,
+                          y.scale.factor = NULL) {
+
+  # Convert the method names
+  dat <- transform(smoothcv.err, 
+                   method = mapvalues(method,
+                                      c("poly", "natural.spline", "smoothing.spline"),
+                                      c("Polynomial", "Natural Spline", "Smoothing Spline")
+                                      )
+                   )
+  
+  # Set axes labels
+  x.text <- "Degrees of Freedom"
+  y.text <- paste0(K, "-fold CV Error")
+  
+  # The ggplot "setting": data, axes, and color by method
+  p <- ggplot(data = dat, aes(x = df, y = cv.error, colour = method)) 
+  
+  # Overlay with line plots, data points, axes labels, and graph title
+  p <- p + geom_line() + geom_point() + xlab(x.text) + ylab(y.text) +
+          ggtitle(title.text)
+  
+  # Adjust the y axis range if y.scale.factor is specified
+  if(!is.null(y.scale.factor)) {
+    min.err <- min(dat$cv.error, na.rm = TRUE)
+    p <- p + ylim(min.err, y.scale.factor * min.err)
+  }
+  
+  # Show a separate plot per method if facet=TRUE
+  if(!facet) {
+    print(p)
+  } else {
+    print(p + facet_wrap("method"))
+  }
+}
+View(College)
+```
+
+
+##### (e) Use your `smoothCV` function with **10-fold** cross-validation on `College2.working` dataset to determine the best choice of **model** and **degrees of freedom** for modeling the relationship between `Grad.Rate` and **each** of these inputs: `Enroll`, `Top10perc`, `Outstate`, and `Expend`. Set `df.min=1` and `df.max=10` for each of your `smoothCV()` calls. Rely on the `plot.smoothCV()` plotting routine to support your choice of model for each of the inputs. 
+
+**Hint:** Use the `y.scale.factor` argument of your `plot.smoothCV` function wisely.  If you see that a particular model's error starts to blow up as `df` increases, you should set `y.scale.factor` appropriately to prevent the extremely large error estimates from misleading you in your assessment of which model to use.
+
+
+```{r}
+#Graduation Rate ~ Enrollment (10 fold cross-validation)
+
+cv.enroll <- smoothCV(x = College2.working$Enroll, 
+                      y = College2.working$Grad.Rate, 
+                      df.min = 1, 
+                      df.max = 10)
+
+plot.smoothCV(cv.enroll, 
+              K = 10,
+              title.text = "CV Error: graduation rate ~ enrollment")
+```
+
+- Enroll: We choose a natural spline model with 4 degrees of freedom - ns(enroll, 4). This is because it has the lowest 10 fold CV error amongst all the degrees of freedom and models under assessment here. 
+
+
+```{r}
+#Graduation Rate ~ Top 10 Percent (10 fold cross-validation)
+
+cv.top <- smoothCV(x = College2.working$Top10perc, 
+                      y = College2.working$Grad.Rate, 
+                      df.min = 1, 
+                      df.max = 10)
+
+plot.smoothCV(cv.top, 
+              K = 10,
+              title.text = 
+              "CV Error: graduation rate ~ % Students from top 10% of H.S. class")
+```
+
+- Top10perc: We choose the smoothing spline model with 3 degrees of freedom - s(top10perc, 3), given that it has the lowest 10-fold CV error and has a CV curve which varies the least when compared to natural spline and polynomial models.
+
+
+```{r}
+#Graduation Rate ~ Outstate (10 fold cross-validation)
+
+cv.outs <- smoothCV(x = College2.working$Outstate, 
+                      y = College2.working$Grad.Rate, 
+                      df.min = 1, 
+                      df.max = 10)
+
+plot.smoothCV(cv.outs, 
+              K = 10, y.scale.factor = 1.2,
+              title.text = "CV Error: graduation rate ~ Out of State Tuition")
+```
+
+- Outstate: Although, degree 10 polynomial model has the lowest CV error, due to the high variability in the CV curve for Polynomial models, we choose a smoothing spline with 5 degrees of freedom - s(Outstate, 5). The smoothing spline is also better behaved in general and ignores any outliers present in the data.
+
+```{r}
+#Graduation Rate ~ Expend (10 fold cross-validation)
+
+cv.exp <- smoothCV(x = College2.working$Expend, 
+                      y = College2.working$Grad.Rate, 
+                      df.min = 1, 
+                      df.max = 10)
+
+plot.smoothCV(cv.exp, 
+              K = 10, y.scale.factor = 1.05,
+              title.text = "CV Error: graduation rate ~ Expend")
+```
+
+- Expend: We choose a natural spline with 2 degrees of freedom - ns(Expend, 2) since this has the lowest CV error compared to all degrees of freedom and models that we have assessed.
+
+##### (f) Use the `gam` library and the **models you selected in Part (e)** to fit an **additive model** of `Grad.Rate` on `Enroll`, `Top10perc`, `Outstate`, and `Expend` on the `College2.working` dataset. Name your GAM model `gam.fit.College`. Use the `plot` command on your `gam.fit.College` object with the arguments `se = TRUE, col = 'darkgreen', lwd = 2` to produce plots of the fitted curves. (See `?plot.gam` for details. You don't need to use `ggplot` here.)
+
+**Note**: Refer to ISLR &sect;7.8.3 for coding hints. Note that in `gam` library you need to use the `s()` function to represent a smoothing spline, not the `smooth.spline()` function you used before.
+
+**Note**: **Do NOT include library `mgcv`! It will interfere with the library `gam`.**
+
+```{r}
+#fitting a generalized additive model
+
+gam.fit.College <- gam(Grad.Rate ~ ns(Enroll, 4) + s(Top10perc, 3) + s(Outstate, 5) + ns(Expend, 2), data = College2.working)
+
+# Ensure that all 4 model fits appear in the same figure
+par(mfrow = c(1,4))
+
+# Write your plot() command below this comment
+plot(gam.fit.College, se = TRUE, col = 'darkgreen', lwd = 2)
+```
+
+
+### 4. [3 points] Lasso (Use `College2.working` dataset)
+
+##### (a) Use the appropriate function from the `glmnet` library to perform cross validation on the Lasso model with `Grad.Rate` as the response and all the other variables in `College2.working` as the input features. Make sure you include `set.seed(1)` right before your cv function call.  What is the default number of folds set by the function you use?
+
+```{r}
+set.seed(1)
+
+#defining x and y matrix for use with cv.glmnet & glmnet
+xs <- model.matrix(Grad.Rate ~., College2.working)[, -1]
+y <- College2.working$Grad.Rate
+
+cv.out <- cv.glmnet(xs, y, alpha = 1)
+```
+
+- The default number of folds used by the cv.glmnet function is 10.
+
+##### (b) Use the `plot` command on the object you get from the cv function above to construct a CV error curve. What value of $\lambda$ minimizes the CV error? What is the 1-SE rule choice of $\lambda$? 
+
+```{r}
+#cv error curve
+plot(cv.out)
+
+#lambda value which minimizes cv error
+bestlam <- cv.out$lambda.min
+
+#lambda value which maximizes cv error
+bestlam.1se <- cv.out$lambda.1se
+```
+
+- The value of lambda which minimizes the CV error is `r bestlam` whereas the 1 SE rule choice of lambda is `r bestlam.1se`.
+
+##### (c) Now fit the lasso model on `College2.working` using the two values of $\lambda$ chosen by cross-validation and examine the coefficient estimates. How many non-zero coefficients are there in the cv-error-minimizing-$\lambda$ model?  How about the 1-SE-rule-$\lambda$ model? 
+
+
+```{r}
+# Predefined grid of lambda values for 
+grid <- 10^seq(10, -2, length = 100)
+
+out <- glmnet(xs, y, alpha = 1, lammbda = grid)
+
+#cv-error-minimizing-lambda model
+lasso.coef <- predict (out, type = "coefficients", s = bestlam)[1:18, ]
+lasso.coef
+
+#the-1-SE-rule-lambda model
+lasso.coef1 <- predict(out, type = "coefficients", s = bestlam.1se)[1:18,]
+lasso.coef1
+```
+
+- The number of non-zero coefficients in lambda min model are `r nrow(predict(out, s = bestlam, type = "nonzero"))` excluding the intercept and the number of non-zero coefficients in the 1-SE-rule model are `r nrow(predict(out, s = bestlam.1se, type = "nonzero"))`. 
+
+### 5. [3 points] Final Model Evaluation
+
+##### (a) Let's wrap it up by evaluating the prediction accuracy of the following models on the held out `College2.final.eval` dataset. For each model, predict the `Grad.Rate` of the observations in `College2.final.eval` and calculate the MSE.
+
+###### (1) The best model from Best Subset Selection (Part 2c). Hint: to obtain the predictions using the model from Best Subset Selection, you can manually calculate them as shown in ISLR &sect;6.5.3. Alternatively, you can use `lm` to fit a linear regression model (on the `College2.working` dataset!) containing the features identified using Best Subset Selection, and use `predict()` on the `lm` model. (I personally find the second option more straightforward, but you are free to choose either.)
+
+```{r}
+#fitting a linear model containing features identified using Best Subset Selection
+lm.b_fit <- lm(Grad.Rate ~ Apps + Top25perc + P.Undergrad + Outstate 
+               + Room.Board + perc.alumni + Expend, 
+               data = College2.working)
+
+#predicting graduation rate
+preds.best <- predict(lm.b_fit, College2.final.eval)
+
+#calculating the MSE
+mean((College2.final.eval$Grad.Rate - preds.best)^2)
+```
+
+
+###### (2) The GAM model from Part 3f. Hint: the syntax of `predict()` using GAM is very similar to `predict()` using linear regression model. See ISLR &sect;7.8.3 for sample code.
+
+```{r}
+#predicting graduation rate
+preds.gam <- predict(gam.fit.College, College2.final.eval)
+
+#calculating the MSE
+mean((College2.final.eval$Grad.Rate - preds.gam)^2)
+```
+
+###### (3) The Lasso model with CV-error-minimizing-$\lambda$. Hint: you need to generate an `x` matrix from the `College2.final.eval` dataset as the input of your `predict()` function.
+
+```{r}
+#matrix based on testing data to be used in predict function
+x <- model.matrix(Grad.Rate ~., College2.final.eval)[,-1]
+y <- College2.final.eval$Grad.Rate
+
+#predicting graduation rate
+lasso.pred <- predict(out, s = bestlam, newx = x)
+
+#Calculating the MSE
+mean((lasso.pred - y) ^ 2)
+```
+
+###### (4) The Lasso model with 1-SE-rule-$\lambda$. Hint: use the same `x` matrix from above as your `predict()` function input.
+
+```{r}
+#predicting graduation rate
+lasso.pred.1se <- predict(out, s = bestlam.1se, newx = x)
+
+#calculating the MSE
+mean((lasso.pred.1se - y) ^ 2)
+```
+
+##### (b) Compare and contrast the performances of the models. Comment on your findings.
+
+- Best Subset Selection: Based on Bayesian Information Criterion, we select the single best model with the lowest BIC amongst all the best models of each size (with k predictors). This method gives us the optimal model with MSE of `r mean((College2.final.eval$Grad.Rate - preds.best)^2)`. The penalty for BIC is larger than other criterion of model selection such as AIC due to its factor of log(n). This is our second best performing models based on the 4 MSEs calculated above.
+
+- The Generalized Additive Model has been used here to fit two natural spline and two smoothing spline models. This gives us a mean prediction error of `r mean((College2.final.eval$Grad.Rate - preds.gam)^2)`. This is our second best performing models based on the 4 MSEs calculated above. This is the poorest performing model based on the 4 MSEs calculated above.
+
+- Lasso Model with CV-error minimizing $\lambda$ gives us the lowest MSE i.e. `r mean((lasso.pred - y) ^ 2)` amongst all 4 models under comparison above. The value of $\lambda$ guides the complexity of the model i.e. the higher the value of $\lambda$, the model becomes more restrictive since most coefficients are pushed towards zero. This is the best performing model based on the 4 MSEs calculated above.
+
+- Lasso Model with 1-SE rule $\lambda$ gives us the an MSE of ```r mean((lasso.pred.1se - y) ^ 2)```. The value of $\lambda$ is selected in this case as follows: Pick the simplest model whose error is within 1 standard error of the
+minimum CV error. This is the third best performing model based on the 4 MSEs calculated above.
+
+##### End of Mid-term Hands-on Assignment #####
