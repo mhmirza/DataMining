@@ -35,7 +35,11 @@ III. [Assignment III](https://github.com/mhmirza/DataMining/tree/main/Assignment
 * Part 4: Lasso
 * Part 5: Instability of Logistic regression
 
-IV. [Assignment IV]
+IV. [Assignment IV](https://github.com/mhmirza/DataMining/tree/main/Assignment%20III)
+
+* Part 1: Classifier performance metrics
+* Part 2: Decision trees, with nicer plots
+* Part 3: Random forests
 
 v. [Midterm Project]
 
