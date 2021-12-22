@@ -51,7 +51,9 @@ v. [Midterm Project](https://github.com/mhmirza/DataMining/tree/main/Mid%20Term)
 
 # Final Project
 
-**Brief Description:** XYZ... To view details, please click on the hyperlinks below:
+**Brief Description:** Detecting Network Intrusions - "_XYZ_ Bank is a large and profitable bank in Saint Louis, Missouri. Like any large corporation, _XYZ_ Bank has a very large and intricate infrastructure that supports its networking system. A Network Analyst recently discovered unusual network activity. Then, pouring over year’s worth of logs, their team of analysts discovered many instances of anomalous network activity that resulted in significant sums of money being siphoned from bank accounts.  The Chief Networking Officer has come to your group for help in developing a system that can automatically detect and warn of such known, as well as other unknown, anomalous network activities."
+
+To view the different components of the project, please click on the hyperlinks for each part below:
 
 * [Survey data]
 * [R Code]
