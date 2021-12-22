@@ -55,8 +55,8 @@ v. [Midterm Project](https://github.com/mhmirza/DataMining/tree/main/Mid%20Term)
 
 To view the different components of the project, please click on the hyperlinks for each part below:
 
-* [Survey data]
-* [R Code]
-* [HTML Output]
-* [Final Report] 
-* [Final Presentation]
+* [Project Description](https://github.com/mhmirza/DataMining/blob/main/Final%20Project/Project_Description.doc)
+* [Data Description](https://github.com/mhmirza/DataMining/blob/main/Final%20Project/Data%20Description.doc)
+* [Network Activity Data](https://github.com/mhmirza/DataMining/blob/main/Final%20Project/network_traffic.csv)
+* [R Code](https://github.com/mhmirza/DataMining/blob/main/Final%20Project/network_intrus_rmdw_groupK.Rmd) 
+* [HTML Report](https://github.com/mhmirza/DataMining/blob/main/Final%20Project/network_intrus_rmdw_groupK.html)
