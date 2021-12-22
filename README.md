@@ -21,7 +21,10 @@ I. [Assignment I](https://github.com/mhmirza/DataMining/tree/main/Assignment%20I
 * Part 3: Dealing with collinearity
 * Part 4: Exploring non-linearities
 
-II. [Assignment II]
+II. Assignment II (to be updated)
+
+* Part 1: Placing knots, choosing degrees of freedom
+* Part 2: Cross-validation
 
 III. [Assignment III]
 
