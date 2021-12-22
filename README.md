@@ -4,7 +4,7 @@ This portfolio captures the work I completed for a course, **Data Mining**, at C
 
 # What I hope to learn?
 
-From the course, A/B Testing Design & Implementation, I wish to garner an understanding of causality and the appropriate language to ask and answer causal questions. In addition to the theoretical knowledge, I intend to learn how the intuition is developed for implementation using fundamental tools required to measure causal effects. The following concepts have been covered in the assignments below: _Randomized Control Experiments; Time and Individual Fixed Effects; Instrumental Variables; Natural Experiments; Differences in Differences; Propensity Score Matching; Compliance in Experiments; Heterogeneous Effects; Interference in Networked Experiments._
+From the course, Data Mining, I wish to learn how to run commonly used data mining methods in R, complemented by an understanding of their advantages & disadvantages, which can be uncovered by comparing the utility of different methods through various types of assignments. In addition, I hope to use practical datasets to navigate through the various stages of model building such as feature selection, model evaluation and resampling to assess the performance & reliability of these methods.
 
 # Portfolio
 
