@@ -23,7 +23,7 @@ I. [Assignment I](https://github.com/mhmirza/DataMining/tree/main/Assignment%20I
 
 II. [Assignment II](https://github.com/mhmirza/DataMining/tree/main/Assignment%20II)
 
-* Folder to be updated.
+* _Code to be updated._
 * Part 1: Placing knots, choosing degrees of freedom
 * Part 2: Cross-validation
 
