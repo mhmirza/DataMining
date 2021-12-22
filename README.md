@@ -14,25 +14,20 @@ Here are the assignments that I completed during the course of this class.
 
 To view the data, code and output files for each, please click on the hyperlinks for folders below. 
 
-I. 
+I. [Assignment I](https://github.com/mhmirza/DataMining/tree/main/Assignment%20I)
 
-[Assignment I]
+* Part 1: Qualitative predictors
+* Part 2: Multiple linear regression
+* Part 3: Dealing with collinearity
+* Part 4: Exploring non-linearities
 
-II. 
+II. [Assignment II]
 
-[Assignment II]
+III. [Assignment III]
 
-III. 
+IV. [Assignment IV]
 
-[Assignment III]
-
-IV. 
-
-[Assignment IV]
-
-v. 
-
-[Midterm Project]
+v. [Midterm Project]
 
 # Final Project
 
