@@ -41,7 +41,13 @@ IV. [Assignment IV](https://github.com/mhmirza/DataMining/tree/main/Assignment%2
 * Part 2: Decision trees, with nicer plots
 * Part 3: Random forests
 
-v. [Midterm Project]
+v. [Midterm Project](https://github.com/mhmirza/DataMining/tree/main/Mid%20Term)
+
+* Part 1: Exploring the dataset
+* Part 2: Subset Selection
+* Part 3: Cross-validation and Generalized Additive Model
+* Part 4: Lasso 
+* Part 5: Final Model Evaluation
 
 # Final Project
 
