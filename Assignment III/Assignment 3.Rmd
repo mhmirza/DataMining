@@ -1,0 +1,324 @@
+---
+title: "Homework 3"
+author: "Mohammad Manzoor Hassan Mirza"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    theme: lumen
+    highlight: pygments
+---
+
+
+```{r}
+library(ggplot2)
+library(ISLR)
+library(glmnet)
+library(leaps)  # needed for regsubsets
+library(boot)   # needed for cv.glm
+library(MASS)
+library(knitr)
+library(gridExtra)
+library(ggpubr)
+
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+options(scipen = 4)
+
+```
+
+
+The data use for the next few problems is about life expectancy and comes from [Kaggle](https://www.kaggle.com/kumarajarshi/life-expectancy-who)
+
+
+### Question 1 - Variable selection
+
+##### **(a)** Save the data file and set the working directory. Run the following code as it is. Look up what `rnorm()` function does. What's contained in the additional columns we append to the original life expectancy dataset?
+
+```{r}
+set.seed(95791)
+
+num.noise <- 50
+lifexp <- read.csv("life_expentancy_who.csv")
+
+df_lifexp <- data.frame(lifexp, 
+                   matrix(rnorm(num.noise * nrow(lifexp)), 
+                            nrow = nrow(lifexp)))
+
+# Drop the non-numeric "country" column
+df_lifexp = df_lifexp[,-1]
+# Remove missing values
+df_lifexp<-df_lifexp[complete.cases(df_lifexp), ]
+head(df_lifexp)
+```
+
+Your response here: The rnorm function runs a simulation to generate random variables given a certain distribution. We have added 50 columns of random noise variables with number of values in each equal to the number of rows in the life expectancy data. A total of 146,900 values have been added to the original life expectancy dataset.
+
+##### **(b)** Use the `glm` command to fit a linear regression of `Life_expectancy` on all the other variables in the `df_lifexp` data set.  Print the names of the predictors whose coefficient estimates are statistically significant at the 0.05 level.  Are any of the "noise" predictors statistically significant?
+
+**Hint:** To access the P-value column of a fitted model named `my.fit`, you'll want to look at the `coef(summary(my.fit))` object. 
+
+```{r, cache = TRUE, warning=FALSE}
+
+glm.fit <- glm(Life_expectancy ∼ ., data = df_lifexp)
+
+summary(glm.fit)$coefficients[summary(glm.fit)$coefficients[, 4] <= 0.05, 0]
+
+```
+
+
+Your response here: There are no random noise variables which are statistically significant. There are a total of 13 variables which are statistically significant here. 
+
+##### **(c)** Use the `cv.glm` command with 10-fold cross-validation to estimate the test error of the model you fit in part (a).  Repeat with number of folds `K = 2, 5, 10, 20, 50, 100` (to make your code more concise and readable, use a loop to iterate over these choices of $K$).  
+
+**Note 1**: This question does NOT ask you to code your CV routine all over again. `cv.glm` automatically handles the CV of the model. You are only asked to try it with different choices of K listed above, which you will use a simple for-loop to do.
+
+**Note 2**: This loop may take a few minutes to run.  I have supplied the option cache = TRUE in the code chunk header to prevent the code from needing to re-execute every time you knit.  This code chunk will re-execute only if the code it contains gets changed. 
+
+```{r, cache = TRUE, warning = FALSE}
+set.seed(1)
+folds <- c(2, 5, 10, 20, 50, 100)
+
+result <- data.frame(matrix(ncol = 2, nrow = 0))
+
+for (i in 1:6) {
+  cv.error = cv.glm(df_lifexp, glm.fit, K = folds[i])$delta[1]
+  result <- rbind (result, c(folds[i], cv.error))
+}
+
+colnames(result) <- c("K", "Test Error")
+
+result
+```
+
+
+##### **(d)** Calculate the standard deviation of your CV error estimates across 6 different choices of $K$. Then calculate the mean of your CV error estimates. And finally take the ratio of the standard deviation and the mean (i.e. divide the standard deviation by the mean).  This quantity is called the [coefficient of variation](https://en.wikipedia.org/wiki/Coefficient_of_variation).  Do the CV error estimates change much across the different choices of $K$?
+
+
+```{r}
+coef_of_var <- sd(result$`Test Error`)/mean(result$`Test Error`)
+```
+
+
+Your response here: The coefficient of variation is `r coef_of_var`. No, the cv error estimates do not change much across different values of k. 
+
+### Best subset selection
+
+##### **(e)**  The code below performs Best Subset Selection to identify which variables in the model are most important.  We only go up to models of size 5, because beyond that the computation time starts to get excessive. 
+
+##### Which variables are included in the best model of each size?  (You will want to work with the `summary(lifexp.subset)` or `coef(lifexp.subset, id = )` object to determine this.)  Are the models all nested?  That is, does the best model of size $k-1$ always a subset of the best model of size $k$?  Do any "noise predictors" appear in any of the models?
+
+
+```{r, cache = TRUE}
+# Best subset selection
+
+lifexp.subset <- regsubsets(Life_expectancy ~ .,
+               data = df_lifexp,
+               nbest = 1,    # 1 best model for each number of predictors
+               nvmax = 5,    # NULL for no limit on number of variables
+               method = "exhaustive", really.big = TRUE)
+
+# Add code below to answer the question
+lifexp.subset_sum<-summary(lifexp.subset)
+lifexp.subset_sum
+
+```
+
+```{r}
+result <- list()
+
+for(i in 1:5) {
+result[[i]] <- c(coef(lifexp.subset, i))
+}
+
+result
+
+```
+
+Your response here: Yes, the models are nested since model size 4 is a subset of model size 5, model size 3 is a subset of model size 4 and so on. However, we do not see any noise predictors appearing in the model.
+
+### Forward Stepwise Selection
+
+##### **(f)**  Modify the code provided in part (e) to perform Forward stepwise selection instead of exhaustive search.  There should be no limit on the maximum size of subset to consider.  
+
+
+```{r}
+lifexp.fwd <-  regsubsets(Life_expectancy ~ .,
+               data = df_lifexp,
+               nbest = 1,
+               nvmax = NULL,
+               method = "forward", really.big = TRUE)
+```
+
+
+
+##### **(g)** Run `summary()` on the `regsubsets` object you got above and save the output object as `lifexp.summary`. You saw in Lab 3 Part 2(f) that this summary object contains a bunch of useful values such as $R^2$, RSS, AIC, and BIC. Generate the four plots as you did in the lab and indicate the *"optimal"* models on each of the curves using `geom_point.` Interpret your results.
+
+
+```{r}
+
+lifexp.summary <- summary(lifexp.fwd)
+
+num_variables <- seq(1, length(lifexp.summary$rss))
+
+#Plotting R-squared
+
+plot_RSQ <-ggplot(data = data.frame(lifexp.summary$rsq),
+                 aes(x = num_variables, y = lifexp.summary$rsq)) +
+  geom_line() +
+  geom_point (x = which.max(lifexp.summary$rsq),
+              y = max(lifexp.summary$rsq),aes(color="red"),
+              show.legend = FALSE) +
+  xlab("# Variables") +
+  ylab("R-squared") +
+  theme_bw()
+
+#Plotting RSS
+
+plot_RSS <-ggplot(data = data.frame(lifexp.summary$rss),
+                 aes(x = num_variables, y = lifexp.summary$rss)) +
+  geom_line() +
+  geom_point (x = which.min(lifexp.summary$rss),
+              y = min(lifexp.summary$rss), aes(color="red"),
+              show.legend = FALSE) +
+  xlab("# Variables") +
+  ylab("RSS") +
+  theme_bw()
+
+#Plotting BIC
+
+plot_BIC <- ggplot(data = data.frame(lifexp.summary$bic),
+                 aes(x = num_variables, y = lifexp.summary.bic)) +
+  geom_line() +
+  geom_point (x = which.min (lifexp.summary$bic),
+              y = min (lifexp.summary$bic), aes(color="red"),
+              show.legend = FALSE) +
+  xlab("# Variables") +
+  ylab("BIC") +
+  theme_bw()
+
+#Plotting AIC
+
+plot_AIC <- ggplot(data = data.frame(lifexp.summary$cp),
+                   aes(x=num_variables,y = lifexp.summary.cp))+
+  geom_line()+
+  geom_point(x=which.min(lifexp.summary$cp),
+             y=min(lifexp.summary$cp),aes(color="red"),
+             show.legend = FALSE)+
+  xlab("# Variables")+
+  ylab("AIC")+
+  theme_bw()
+
+grid.arrange(plot_RSQ, plot_RSS, plot_AIC,plot_BIC, ncol=2,nrow=2)
+```
+
+
+Your response here: 
+
+- The R-squared indicates the strength of the relationship between the model and dependent variables. It is equivalent to the fraction of the variance of y that can be explained by the regression model. The curve indicates the minimum R-Squared for the best model of each size. As we add more variables, the R-squared goes up. Therefore, the optimal model using this criteria is the one with ~70 variables which yields in the maximum R-squared.
+
+- Since we aim to minimize the Residual Sum of Squares, the optimal model here has ~70 variables. From the graph, we can see that as more variables are added and the model becomes more complex, RSS declines. The curve indicates the minimum RSS for the best model of each size.
+
+- Since we aim to minimize the AIC, the optimal model here has ~21 variables. From the graph, we can see that as more variables are added AIC declines. The curve indicates the minimum AIC for the best model of each size.
+
+- Since we aim to minimize the BIC, the optimal model here has ~12 variables. From the graph, we can see that as more variables are added BIC declines. The curve indicates the minimum BIC for the best model of each size.
+
+### Question 2 - Lasso
+
+> For the Lasso problems below, you may find it helpful to review the code examples in the [Linear regression with glmnet](https://web.stanford.edu/~hastie/glmnet/glmnet_alpha.html#lin) vignette.  Running the glmnet command `glmnet(x = X, y = y)` where `y` is your response vector and `X` is your covariates matrix will fit a Lasso.  
+
+##### **(a)** Use the `glmnet` command to fit a Lasso to this data.  Call the result `lifexp.lasso`.  
+
+```{r}
+#covariates matrix
+x.vars <- as.matrix(df_lifexp[, -21])
+#response variable
+y.var <- df_lifexp$Life_expectancy
+
+lifexp.lasso <- glmnet(x = x.vars, y = y.var, alpha = 1)
+
+```
+
+
+##### **(b)** It turns out that `lifexp.lasso` contains model fits for an entire sequence of $\lambda$ values.  Look at the `lifexp.lasso$lambda` attribute.  How many $\lambda$ values do we have model fits for?
+
+```{r}
+length(lifexp.lasso$lambda)
+```
+
+Your response here: We have model fits for 88 lambda values.
+
+##### **(c)**  Run the `plot` command on your `lifexp.lasso` object to get a regularization plot.  Review the help file for `plot.glmnet` to figure out how to set "norm" as the x-axis variable option, and how to add labels to the curves.  In this parameterization of the x-axis, is the model fit getting more complex or less complex as the x-axis variable increases?
+
+```{r}
+plot(lifexp.lasso, xvar = "norm", label = TRUE)
+```
+
+Your response here: As the x-axis variable increases, the model fit becomes more complex i.e. more variables are added since the coefficients move away from zero.
+
+### Question 3 - Instability of Logistic regression
+
+> This question walks you through a simple example that illustrates the instability of logistic regression coefficient estimates in cases where the classes are **clearly separable**.  This instability can arise in practice when we have inputs $X$ that are categorical variables with a large number of levels.  In such cases, particularly when we have low cell counts, it is not uncommon for all observed outcomes in a particular category to be either all $0$ or all $1$.  This leads the coefficient corresponding to that category to be very unstable.
+
+##### **(a)** Load the `age.data` below, which contains simulated age information on 3000 individuals.  We want to use the `age` variable to try to classify individuals as adults or non-adults.  The outcome variable `is.adult` is 1 for adults and 0 for non-adults.  
+
+```{r}
+age.data <- read.csv("agedata.csv")
+```
+
+##### Use `geom_histogram()` to construct a conditional probability plot to show how the probability of being an adult varies with age. You may check out the `geom_histogram(position = "fill")` example (at this link)[https://ggplot2-book.org/statistical-summaries.html]. Note that `fill` needs to take a factor variable, so you will need to convert the numeric `is.adult` to a factor *just for the purpose of this plot* (do not overwrite the original `is.adult` data).
+
+```{r}
+ggplot(age.data, aes(age)) + geom_histogram(aes(fill = as.factor(is.adult)), position = "fill") +
+  theme(legend.position = "none") + 
+  ylab("Adult? (0 = No, 1 = Yes)")
+```
+
+##### **(b)** Is this a difficult classification problem?  Can you think of a simple rule that gives 100\% classification accuracy for this task? Use your simple rule to try and classify the observations in data as adults (predict 1) or non-adults (predict 0). Compute the error rate of your prediction.  
+
+
+```{r}
+rule.probs <- ifelse(age.data$age >= 18, 1, 0)
+mean(rule.probs != age.data$is.adult)
+```
+Your response here: This is not really a difficult classification problem since only one factor comes into play. I used a cutoff value of 18 which gives me a 100% classification accuracy. The reason is because this age is used to defined adulthood in the United States and many other countries across the world.   
+
+##### **(c)** Fit a logistic regression to the data. Use the `kable()` command to print out a nice summary of your coefficients estimate table.  Is the coefficient of `age` statistically significant?
+
+**Note:** You may encounter some warning messages when you fit the logistic regression, which is fine. In fact, these warnings are indicative of the exact problem with the data we are trying to demonstrate.
+
+
+```{r}
+log.fit <- glm(is.adult ~ age, family = binomial(), data = age.data)
+kable(coef(summary(log.fit)))
+```
+
+Your response here: The coefficient of age is statistically insignificant since its p-value is 0.768 which is greater than 0.05 significance level (alpha).
+
+
+##### **(d)** Retrieve the fitted probabilities from the glm object you obtained above. Using a probability cutoff of 0.5, classify the observations into 0 or 1. Compute the error rate of your logistic regression classifier.  Does the logistic regression classifier do a good job of classifying individuals as adult vs non-adult?
+
+```{r}
+probs <- log.fit$fitted.values
+glm.pred = rep(0, length(probs))
+glm.pred[probs > 0.5] = 1
+table(glm.pred, age.data$is.adult)
+mean(glm.pred != age.data$is.adult)
+```
+
+Your response here: Yes, the logistic regression classifier does a good job of classifying individuals as adult v/s non-adult. We can see that we get an error rate of 0%, thereby a precition accuracy of 100%.
+
+
+##### **(e)** Use `qplot(x = ...)` to construct a histogram of the estimated probabilities from your logistic regression.  Describe what you see. 
+
+```{r}
+qplot(x = log.fit$fitted.values) + ylab ("Count") + xlab("Prob - Log Regr")
+```
+
+Your response here: The estimated probabilities from the logistic regression for any individual are either 0% or 100% since the model is sure about it. Moreover, the model classifies 2646 individuals as adults and 354 as non-adults, reflecting our data accurately.
+
+```{r}
+######## END OF HOMEWORK 3 #######
+```
+
+
