@@ -12,15 +12,31 @@ Here are the assignments that I completed during the course of this class.
 
 # Assignments
 
-To view the data, code and response file for each, please click on the hyperlinks below. 
+To view the data, code and output files for each, please click on the hyperlinks for folders below. 
 
-I. [Time Dummies, Fixed Effects & First-Differences]
+I. 
 
-II. [Propensity Score Matching]
+[Assignment I]
+
+II. 
+
+[Assignment II]
+
+III. 
+
+[Assignment III]
+
+IV. 
+
+[Assignment IV]
+
+v. 
+
+[Midterm Project]
 
 # Final Project
 
-**Brief Description:** Using data from a [Qualtrics](https://www.qualtrics.com/) survey executed by our team in Pittsburgh, the paper explores the causal effect of including scooter rides as part of the university transportation fee on weekly scooter usage. The causal inference in this scenario is established due to the elimination of selection bias, which was achieved through random assignment of experimental subjects to the treatment and control group. Moreover, the analysis extends to explore heterogeneity in the average causal effect across groups within the sample using key barriers of distance, safety and income as moderators. The project consisted of the following parts: Experiment Design & Causal Question of Interest; Survey Design & Execution; Data & Analysis and Recommendations. To view details, please click on the hyperlinks below:
+**Brief Description:** XYZ... To view details, please click on the hyperlinks below:
 
 * [Survey data]
 * [R Code]
