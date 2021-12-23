@@ -38,7 +38,7 @@ III. [Assignment III](https://github.com/mhmirza/DataMining/tree/main/Assignment
 IV. [Assignment IV](https://github.com/mhmirza/DataMining/tree/main/Assignment%20III)
 
 * Part 1: Classifier performance metrics
-* Part 2: Decision trees, with nicer plots
+* Part 2: Decision trees
 * Part 3: Random forests
 
 v. [Midterm Project](https://github.com/mhmirza/DataMining/tree/main/Mid%20Term)
@@ -53,7 +53,7 @@ v. [Midterm Project](https://github.com/mhmirza/DataMining/tree/main/Mid%20Term)
 
 **Brief Description:** Detecting Network Intrusions - "There is a large and profitable bank in Saint Louis, Missouri. Like any large corporation, this bank has a very large and intricate infrastructure that supports its networking system. A Network Analyst recently discovered unusual network activity. Then, pouring over year’s worth of logs, their team of analysts discovered many instances of anomalous network activity that resulted in significant sums of money being siphoned from bank accounts.  The Chief Networking Officer has come to your group for help in developing a system that can automatically detect and warn of such known, as well as other unknown, anomalous network activities."
 
-The following tasks were performed as part of this project: differentiating between the labeled intrusions and benign sessions; identifying different types of intrusions; developing and implementing a systematic approach to detect instances of intrusions in log files; evaluating the detection power of the designed system; assessing the real-time use of the intrusion detector.
+The following tasks were performed as part of this project: _differentiating between the labeled intrusions and benign sessions; identifying different types of intrusions; developing and implementing a systematic approach to detect instances of intrusions in log files; evaluating the detection power of the designed system; assessing the real-time use of the intrusion detector._
 
 To view the different components of the project, please click on the hyperlinks for each part below:
 
