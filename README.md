@@ -4,9 +4,9 @@
 
 This portfolio captures the work I completed for a course, **Data Mining**, at Carnegie Mellon University in Spring 2021. The work done here involves discovering structure and making predictions in large, complex data sets. The tasks encompass learnings about many commonly used methods for predictive and descriptive analytics tasks, in addition to assessing the methods' predictive and practical utility. To view my course repository on GitHub, please click [here](https://github.com/mhmirza/DataMining). 
 
-# What I hope to learn?
+# Key Learnings
 
-From the course, Data Mining, I wish to learn how to run commonly used data mining methods in R, along with weighing their advantages & disadvantages by comparing their utility through various types of assignments below. In addition, I hope to use real-world datasets to navigate through various stages of model building such as feature selection, model evaluation and resampling to assess the performance & reliability of these methods.
+From the course, Data Mining, I learnt how to utilize popular data mining methods in R, along with weighing their advantages & disadvantages by comparing their utility through various assignments highlighted below. In addition, I hope to use real-world datasets to navigate through various stages of model building such as feature selection, model evaluation and resampling to assess the performance & reliability of these methods.
 
 # Portfolio
 
