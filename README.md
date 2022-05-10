@@ -6,7 +6,7 @@ This portfolio captures the work I completed for a course, **Data Mining**, at C
 
 # Key Learnings
 
-From the course, Data Mining, I learnt how to utilize popular data mining methods in R, along with weighing their advantages & disadvantages by comparing their utility through various assignments highlighted below. In addition, I hope to use real-world datasets to navigate through various stages of model building such as feature selection, model evaluation and resampling to assess the performance & reliability of these methods.
+From the course, Data Mining, I learnt how to utilize popular data mining methods in R, along with weighing their advantages & disadvantages by comparing their utility through various assignments highlighted below. Moreover, I used real-world datasets to navigate through various stages of model building such as feature selection, model evaluation and resampling, to assess the performance & reliability of these methods.
 
 # Portfolio
 
